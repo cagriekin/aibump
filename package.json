@@ -1,0 +1,34 @@
+{
+  "name": "npm-version-tool",
+  "version": "1.0.0",
+  "description": "CLI tool that analyzes git changes and automatically bumps npm version",
+  "main": "dist/index.js",
+  "bin": {
+    "npm-version-tool": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/index.ts",
+    "dev": "ts-node --watch src/index.ts"
+  },
+  "keywords": [
+    "npm",
+    "version",
+    "git",
+    "cli",
+    "openai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "openai": "^4.0.0",
+    "simple-git": "^3.0.0",
+    "execa": "^8.0.0"
+  }
+}
