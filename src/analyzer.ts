@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import simpleGit from 'simple-git';
 import OpenAI from 'openai';
@@ -8,6 +8,7 @@ export interface AnalyzeOptions {
   apiKey?: string;
   model?: string;
   dryRun?: boolean;
+  force?: boolean;
 }
 
 export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
@@ -35,7 +36,7 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   }
 
   // Execute version bump
-  await executeVersionBump(versionType);
+  await executeVersionBump(versionType, options.force);
 }
 
 async function validateEnvironment(): Promise<void> {
@@ -72,7 +73,7 @@ async function getUnstagedChanges(): Promise<string> {
 
   try {
     // Get diff of unstaged changes
-    const diff = await git.diff(['--no-pager']);
+    const diff = await git.diff();
     return diff;
   } catch (error) {
     throw new Error(`Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`);
@@ -120,10 +121,28 @@ Respond with only one word: "major", "minor", or "patch".`;
   }
 }
 
-async function executeVersionBump(versionType: 'major' | 'minor' | 'patch'): Promise<void> {
+async function executeVersionBump(versionType: 'major' | 'minor' | 'patch', force: boolean = false): Promise<void> {
   try {
-    console.log(`Running: npm version ${versionType}`);
-    const result = await execa('npm', ['version', versionType], {
+    // Check if git working directory is clean (unless force is enabled)
+    if (!force) {
+      const git = simpleGit();
+      const status = await git.status();
+
+      if (!status.isClean()) {
+        const uncommittedFiles = [
+          ...status.modified,
+          ...status.not_added,
+          ...status.deleted,
+          ...status.renamed.map(r => r.to)
+        ];
+
+        throw new Error(`Git working directory is not clean. The following files have uncommitted changes:\n${uncommittedFiles.map(f => `  - ${f}`).join('\n')}\n\nPlease commit or stash these changes before running the version bump, or use --force flag to proceed anyway.`);
+      }
+    }
+
+    const npmArgs = force ? ['version', versionType, '--force'] : ['version', versionType];
+    console.log(`Running: npm ${npmArgs.join(' ')}`);
+    const result = await execa('npm', npmArgs, {
       stdio: 'inherit',
       cwd: process.cwd(),
     });
@@ -132,8 +151,44 @@ async function executeVersionBump(versionType: 'major' | 'minor' | 'patch'): Pro
       throw new Error(`npm version command failed with exit code ${result.exitCode}`);
     }
 
+    // Update package-lock.json with the new version
+    await updatePackageLockVersion();
+
     console.log('Version bump completed successfully.');
   } catch (error) {
     throw new Error(`Failed to execute version bump: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function updatePackageLockVersion(): Promise<void> {
+  const packageJsonPath = join(process.cwd(), 'package.json');
+  const packageLockPath = join(process.cwd(), 'package-lock.json');
+
+  try {
+    // Read the updated version from package.json
+    const packageJsonContent = readFileSync(packageJsonPath, 'utf-8');
+    const packageJson = JSON.parse(packageJsonContent);
+    const newVersion = packageJson.version;
+
+    // Read and update package-lock.json
+    const packageLockContent = readFileSync(packageLockPath, 'utf-8');
+    const packageLock = JSON.parse(packageLockContent);
+
+    // Update the version field
+    packageLock.version = newVersion;
+
+    // Also update the version in the packages[""] section if it exists
+    if (packageLock.packages && packageLock.packages['']) {
+      packageLock.packages[''].version = newVersion;
+    }
+
+    // Write the updated package-lock.json back to disk
+    writeFileSync(packageLockPath, JSON.stringify(packageLock, null, 2) + '\n');
+
+    console.log(`Updated package-lock.json version to ${newVersion}`);
+  } catch (error) {
+    // If package-lock.json doesn't exist or can't be updated, that's okay
+    // The npm version command will have already updated package.json
+    console.log('Warning: Could not update package-lock.json version:', error instanceof Error ? error.message : String(error));
   }
 }
