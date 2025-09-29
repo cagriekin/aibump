@@ -1,0 +1,19 @@
+# Source files
+src/
+tsconfig.json
+
+# Test files
+test-package.json
+
+# Development files
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Node modules (shouldn't be needed but just in case)
+node_modules/

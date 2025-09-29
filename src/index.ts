@@ -8,7 +8,7 @@ const program = new Command();
 program
   .name('aibump')
   .description('AI-powered CLI tool that analyzes git changes and automatically bumps npm and Helm versions')
-  .version('1.0.0')
+  .version('2.0.1')
   .option('-k, --api-key <key>', 'OpenAI API key (will be saved to ~/.config/aibump)')
   .option('-m, --model <model>', 'OpenAI model to use', 'gpt-4')
   .option('--dry-run', 'Show what would be done without making changes')
