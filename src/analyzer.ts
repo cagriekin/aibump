@@ -476,6 +476,8 @@ Guidelines:
 - Focus on what changed, not how it was implemented
 - Use present tense for the summary and bullet points
 - Be specific about the impact or functionality
+- Do NOT include version bumps (package.json, Chart.yaml version changes) in the summary line
+- Version bumps can be included in bullet points if they are significant
 
 Git diff:
 ${diff}
