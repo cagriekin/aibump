@@ -304,11 +304,49 @@ async function analyzeWithOpenAI(changes: string, options: AnalyzeOptions): Prom
     apiKey,
   });
 
-  const prompt = `Analyze the following git diff and determine what type of version bump is appropriate according to semantic versioning (semver):
+  const prompt = `Analyze the following git diff and determine what type of version bump is appropriate according to semantic versioning (semver).
 
-MAJOR: Breaking changes (incompatible API changes)
-MINOR: New features (backwards compatible)
-PATCH: Bug fixes (backwards compatible)
+This is a CLI tool called "aibump" that analyzes git changes and automatically bumps npm and Helm versions using AI.
+
+MAJOR (breaking changes - incompatible API changes):
+- Removing public functions, methods, classes, or exports
+- Changing function signatures (parameter names, types, order, or removing parameters)
+- Changing return types of public APIs
+- Removing or renaming public properties/fields
+- Changing behavior that breaks existing functionality
+- Removing configuration options or changing their format
+- Changing environment variable names or formats
+- Breaking changes to CLI commands or their arguments
+- Changing the format of output or responses
+- Removing CLI options or changing their behavior
+
+MINOR (new features - backwards compatible):
+- Adding new functions, methods, classes, or exports
+- Adding optional parameters to existing functions
+- Adding new optional properties/fields
+- Adding new features without changing existing behavior
+- Adding new configuration options
+- Adding new CLI commands or optional arguments
+- Performance improvements that don't change behavior
+- Adding new output formats or options
+- Enhancing existing functionality without breaking changes
+
+PATCH (bug fixes - backwards compatible):
+- Fixing bugs without changing public APIs
+- Updating internal implementation details
+- Fixing typos in documentation or comments
+- Updating dependencies (unless they introduce breaking changes)
+- Security fixes that don't change APIs
+- Internal refactoring that doesn't affect public interfaces
+- Fixing CLI command behavior without changing the interface
+- Improving error messages or logging
+
+CRITICAL GUIDANCE:
+- Only use MAJOR if existing code/scripts using this tool would break
+- Adding new CLI options (like --new-flag) is MINOR, not MAJOR
+- Fixing bugs in existing functionality is PATCH, not MAJOR
+- Internal code changes that don't affect the public interface are PATCH
+- When in doubt between MINOR and PATCH, choose PATCH for bug fixes and MINOR for new features
 
 Git diff:
 ${changes}
