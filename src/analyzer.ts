@@ -31,15 +31,15 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   // Validate environment
   await validateEnvironment();
 
-  // Get unstaged changes
+  // Get unstaged changes (excluding large files)
   const changes = await getUnstagedChanges();
 
   if (!changes.trim()) {
-    console.log('No unstaged changes found. Nothing to analyze.');
+    console.log('No relevant unstaged changes found. Large files like package-lock.json are excluded from analysis.');
     return;
   }
 
-  console.log('Found unstaged changes:\n', changes);
+  console.log('Found relevant unstaged changes (large files excluded):\n', changes);
 
   // Determine change type (helm vs app)
   const changeType = detectChangeType(changes);
@@ -97,12 +97,60 @@ async function validateEnvironment(): Promise<void> {
   }
 }
 
+// Files to exclude from analysis due to size and lack of semantic meaning
+const EXCLUDED_FILES = [
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'node_modules/',
+  '.git/',
+  'dist/',
+  'build/',
+  'coverage/',
+  '.nyc_output/',
+  '*.log',
+  '*.min.js',
+  '*.min.css'
+];
+
 async function getUnstagedChanges(): Promise<string> {
   const git = simpleGit();
 
   try {
-    // Get diff of unstaged changes
-    const diff = await git.diff();
+    // Get list of changed files first
+    const status = await git.status();
+    const changedFiles = [
+      ...status.modified,
+      ...status.created,
+      ...status.deleted,
+      ...status.renamed.map(r => r.to)
+    ];
+
+    // Filter out excluded files
+    const excludedFiles = changedFiles.filter(file =>
+      EXCLUDED_FILES.some(excluded =>
+        file.includes(excluded) ||
+        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+      )
+    );
+
+    const relevantFiles = changedFiles.filter(file =>
+      !EXCLUDED_FILES.some(excluded =>
+        file.includes(excluded) ||
+        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+      )
+    );
+
+    if (excludedFiles.length > 0) {
+      console.log(`Excluding large files from analysis: ${excludedFiles.join(', ')}`);
+    }
+
+    if (relevantFiles.length === 0) {
+      return '';
+    }
+
+    // Get diff only for relevant files
+    const diff = await git.diff(relevantFiles);
     return diff;
   } catch (error) {
     throw new Error(`Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`);
@@ -110,18 +158,27 @@ async function getUnstagedChanges(): Promise<string> {
 }
 
 function detectChangeType(changes: string): ChangeType {
+  // If no changes after filtering, return none
+  if (!changes.trim()) {
+    return { type: 'none', helmChanges: false, appChanges: false };
+  }
+
   const lines = changes.split('\n');
   let helmChanges = false;
   let appChanges = false;
 
   for (const line of lines) {
-    // Check for helm directory changes
+    // Skip diff metadata lines
+    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('@@') || line.trim() === '') {
+      continue;
+    }
+
+    // Check for helm directory changes (excluding Chart.yaml which is handled separately)
     if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
       helmChanges = true;
     }
     // Check for app changes (everything except helm directory)
-    if (!line.startsWith('---') && !line.startsWith('+++') && !line.startsWith('@@') &&
-      !line.includes('helm/') && line.trim() !== '') {
+    else if (!line.includes('helm/')) {
       appChanges = true;
     }
   }
@@ -211,7 +268,7 @@ Respond with only one word: "major", "minor", or "patch".`;
 
   try {
     const completion = await openai.chat.completions.create({
-      model: options.model || 'gpt-4',
+      model: options.model || 'gpt-5-nano',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 10,
       temperature: 0,
