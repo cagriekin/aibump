@@ -12,6 +12,9 @@ export interface AnalyzeOptions {
   model?: string;
   dryRun?: boolean;
   noCommit?: boolean;
+  staged?: boolean;
+  unstaged?: boolean;
+  both?: boolean;
 }
 
 export interface ChangeType {
@@ -33,27 +36,31 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   // Validate environment
   await validateEnvironment();
 
-  // Get unstaged changes (excluding large files)
-  const changes = await getUnstagedChanges();
+  // Determine what changes to analyze based on options
+  const changeType = determineChangeType(options);
+  console.log(`Analyzing ${changeType} changes...`);
 
-  if (!changes.trim()) {
-    console.log('No relevant unstaged changes found. Large files like package-lock.json are excluded from analysis.');
+  // Get changes (excluding large files)
+  const { staged, unstaged, combined } = await getChanges(options);
+
+  if (!combined.trim()) {
+    console.log(`No relevant ${changeType} changes found. Large files like package-lock.json are excluded from analysis.`);
     return;
   }
 
-  console.log('Found relevant unstaged changes (large files excluded):\n', changes);
+  console.log(`Found relevant ${changeType} changes (large files excluded):\n`, combined);
 
   // Determine change type (helm vs app)
-  const changeType = detectChangeType(changes);
-  console.log(`Change type detected: ${changeType.type}`);
+  const detectedChangeType = detectChangeType(combined);
+  console.log(`Change type detected: ${detectedChangeType.type}`);
   
   // Add specific logging for Helm scripts
-  if (changeType.type === 'helm-only') {
-    const hasHelmScripts = changes.includes('helm/') && (
-      changes.includes('.sh') || changes.includes('.bash') || changes.includes('.py') || 
-      changes.includes('.js') || changes.includes('.ts') || changes.includes('.rb') ||
-      changes.includes('.pl') || changes.includes('.ps1') || changes.includes('.bat') ||
-      changes.includes('.cmd') || changes.includes('scripts/') || changes.includes('hooks/')
+  if (detectedChangeType.type === 'helm-only') {
+    const hasHelmScripts = combined.includes('helm/') && (
+      combined.includes('.sh') || combined.includes('.bash') || combined.includes('.py') || 
+      combined.includes('.js') || combined.includes('.ts') || combined.includes('.rb') ||
+      combined.includes('.pl') || combined.includes('.ps1') || combined.includes('.bat') ||
+      combined.includes('.cmd') || combined.includes('scripts/') || combined.includes('hooks/')
     );
     
     if (hasHelmScripts) {
@@ -61,32 +68,39 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
     }
   }
 
-  if (changeType.type === 'none') {
+  if (detectedChangeType.type === 'none') {
     console.log('No relevant changes found. Nothing to version.');
     return;
   }
 
   // Analyze with OpenAI
-  const versionType = await analyzeWithOpenAI(changes, options);
+  const versionType = await analyzeWithOpenAI(combined, options);
 
   console.log(`Recommended version bump: ${versionType}`);
 
   if (options.dryRun) {
-    if (changeType.type === 'helm-only') {
+    if (detectedChangeType.type === 'helm-only') {
       console.log(`Would bump Helm chart version: ${versionType}`);
-    } else if (changeType.type === 'app-only' || changeType.type === 'both') {
+    } else if (detectedChangeType.type === 'app-only' || detectedChangeType.type === 'both') {
       console.log(`Would run: npm version ${versionType} and update Helm appVersion`);
     }
     return;
   }
 
   // Execute appropriate version bump based on change type
-  await executeVersionBump(versionType, changeType);
+  await executeVersionBump(versionType, detectedChangeType);
 
   // Generate commit message and commit changes by default (unless disabled or dry run)
   if (!options.noCommit && !options.dryRun) {
     await generateCommitMessageAndCommit(options);
   }
+}
+
+function determineChangeType(options: AnalyzeOptions): string {
+  if (options.staged) return 'staged';
+  if (options.unstaged) return 'unstaged';
+  if (options.both) return 'staged and unstaged';
+  return 'staged and unstaged'; // default behavior
 }
 
 async function validateEnvironment(): Promise<void> {
@@ -133,6 +147,49 @@ const EXCLUDED_FILES = [
   '*.min.js',
   '*.min.css'
 ];
+
+async function getStagedChanges(): Promise<string> {
+  const git = simpleGit();
+
+  try {
+    // Get list of staged files
+    const status = await git.status();
+    const stagedFiles = status.staged;
+
+    if (stagedFiles.length === 0) {
+      return '';
+    }
+
+    // Filter out excluded files
+    const excludedFiles = stagedFiles.filter(file =>
+      EXCLUDED_FILES.some(excluded =>
+        file.includes(excluded) ||
+        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+      )
+    );
+
+    const relevantFiles = stagedFiles.filter(file =>
+      !EXCLUDED_FILES.some(excluded =>
+        file.includes(excluded) ||
+        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+      )
+    );
+
+    if (excludedFiles.length > 0) {
+      console.log(`Excluding large staged files from analysis: ${excludedFiles.join(', ')}`);
+    }
+
+    if (relevantFiles.length === 0) {
+      return '';
+    }
+
+    // Get diff for staged files
+    const diff = await git.diff(['--cached', ...relevantFiles]);
+    return diff;
+  } catch (error) {
+    throw new Error(`Failed to get staged git diff: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 async function getUnstagedChanges(): Promise<string> {
   const git = simpleGit();
@@ -218,6 +275,22 @@ async function getUnstagedChanges(): Promise<string> {
   } catch (error) {
     throw new Error(`Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+async function getChanges(options: AnalyzeOptions): Promise<{ staged: string; unstaged: string; combined: string }> {
+  const staged = options.staged || options.both || (!options.staged && !options.unstaged && !options.both) ? await getStagedChanges() : '';
+  const unstaged = options.unstaged || options.both || (!options.staged && !options.unstaged && !options.both) ? await getUnstagedChanges() : '';
+  
+  let combined = '';
+  if (staged && unstaged) {
+    combined = `=== STAGED CHANGES ===\n${staged}\n\n=== UNSTAGED CHANGES ===\n${unstaged}`;
+  } else if (staged) {
+    combined = `=== STAGED CHANGES ===\n${staged}`;
+  } else if (unstaged) {
+    combined = `=== UNSTAGED CHANGES ===\n${unstaged}`;
+  }
+  
+  return { staged, unstaged, combined };
 }
 
 function detectChangeType(changes: string): ChangeType {
@@ -556,8 +629,20 @@ async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<
   try {
     const git = simpleGit();
 
-    // Get the current git diff (staged and unstaged changes)
-    const diff = await git.diff();
+    // Get the appropriate diff based on options
+    let diff = '';
+    if (options.staged) {
+      // Only commit staged changes
+      diff = await git.diff(['--cached']);
+    } else if (options.unstaged) {
+      // Stage unstaged changes and commit them
+      await git.add('.');
+      diff = await git.diff(['--cached']);
+    } else if (options.both || (!options.staged && !options.unstaged && !options.both)) {
+      // Stage all changes (both staged and unstaged) and commit
+      await git.add('.');
+      diff = await git.diff(['--cached']);
+    }
 
     if (!diff.trim()) {
       console.log('No changes to commit.');
@@ -566,9 +651,6 @@ async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<
 
     // Generate commit message using OpenAI
     const commitMessage = await generateCommitMessage(diff, options);
-
-    // Stage all changes
-    await git.add('.');
 
     // Commit with the generated message
     await git.commit(commitMessage);

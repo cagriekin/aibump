@@ -18,6 +18,9 @@ program
   .option('-m, --model <model>', 'OpenAI model to use', 'gpt-4')
   .option('--dry-run', 'Show what would be done without making changes')
   .option('--no-commit', 'Skip generating commit message and committing changes')
+  .option('--staged', 'Analyze only staged changes')
+  .option('--unstaged', 'Analyze only unstaged changes')
+  .option('--both', 'Analyze both staged and unstaged changes (default behavior)')
   .action(async (options) => {
     try {
       // Handle --version option
