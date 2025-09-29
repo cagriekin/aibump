@@ -1,6 +1,6 @@
 {
   "name": "aibump",
-  "version": "2.0.3",
+  "version": "3.0.0",
   "description": "AI-powered CLI tool that analyzes git changes and automatically bumps npm and Helm versions",
   "main": "dist/index.js",
   "bin": {
@@ -24,16 +24,16 @@
   "author": "Çağrı Ekin <cagri@m102a.com>",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/js-yaml": "^4.0.0",
-    "ts-node": "^10.9.0",
-    "typescript": "^5.0.0"
+    "@types/node": "^24.5.2",
+    "@types/js-yaml": "^4.0.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
   },
   "dependencies": {
-    "commander": "^11.0.0",
-    "openai": "^4.0.0",
-    "simple-git": "^3.0.0",
-    "execa": "^8.0.0",
+    "commander": "^14.0.1",
+    "openai": "^5.23.1",
+    "simple-git": "^3.28.0",
+    "execa": "^9.6.0",
     "js-yaml": "^4.1.0"
   }
 }
