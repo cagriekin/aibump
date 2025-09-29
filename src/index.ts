@@ -12,6 +12,7 @@ program
   .option('-k, --api-key <key>', 'OpenAI API key (will be saved to ~/.config/aibump)')
   .option('-m, --model <model>', 'OpenAI model to use', 'gpt-4')
   .option('--dry-run', 'Show what would be done without making changes')
+  .option('--no-commit', 'Skip generating commit message and committing changes')
   .action(async (options) => {
     try {
       await analyzeChanges(options);

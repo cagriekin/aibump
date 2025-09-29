@@ -25,13 +25,12 @@ aibump
 - `-k, --api-key <key>`: OpenAI API key (can also be set via `OPENAI_API_KEY` environment variable)
 - `-m, --model <model>`: OpenAI model to use (default: gpt-4)
 - `--dry-run`: Show what would be done without making changes
-- `-f, --force`: Force version bump even with uncommitted changes
+- `--no-commit`: Skip generating commit message and committing changes (commit is enabled by default)
 
 ## Prerequisites
 
 - Must be run in a git repository
 - Must have a `package.json` file in the current directory
-- Git working directory must be clean (or use `--force` to override)
 - OpenAI API key must be provided
 
 ## How it works
@@ -44,6 +43,7 @@ aibump
    - **Helm-only changes**: Bumps version in `helm/Chart.yaml`
    - **App changes**: Bumps `package.json` version and syncs `appVersion` in `helm/Chart.yaml`
    - **Mixed changes**: Bumps both versions appropriately
+6. Generates a conventional commit message using OpenAI and commits all changes (unless `--no-commit` is used)
 
 ## Example
 
@@ -64,6 +64,7 @@ Recommended version bump: minor
 Running: npm version minor
 Updated Helm chart appVersion to 1.1.0
 Version bump completed successfully.
+Committed changes with message: feat: add new feature logging
 ```
 
 ## Helm Chart Support

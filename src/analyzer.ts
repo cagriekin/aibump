@@ -10,6 +10,7 @@ export interface AnalyzeOptions {
   apiKey?: string;
   model?: string;
   dryRun?: boolean;
+  noCommit?: boolean;
 }
 
 export interface ChangeType {
@@ -66,6 +67,11 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
 
   // Execute appropriate version bump based on change type
   await executeVersionBump(versionType, changeType);
+
+  // Generate commit message and commit changes by default (unless disabled or dry run)
+  if (!options.noCommit && !options.dryRun) {
+    await generateCommitMessageAndCommit(options);
+  }
 }
 
 async function validateEnvironment(): Promise<void> {
@@ -407,5 +413,81 @@ async function updatePackageLockVersion(): Promise<void> {
   } catch (error) {
     // If package-lock.json doesn't exist or can't be updated, that's okay
     console.log('Warning: Could not update package-lock.json version:', error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<void> {
+  try {
+    const git = simpleGit();
+
+    // Get the current git diff (staged and unstaged changes)
+    const diff = await git.diff();
+
+    if (!diff.trim()) {
+      console.log('No changes to commit.');
+      return;
+    }
+
+    // Generate commit message using OpenAI
+    const commitMessage = await generateCommitMessage(diff, options);
+
+    // Stage all changes
+    await git.add('.');
+
+    // Commit with the generated message
+    await git.commit(commitMessage);
+
+    console.log(`Committed changes with message: ${commitMessage}`);
+  } catch (error) {
+    throw new Error(`Failed to commit changes: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function generateCommitMessage(diff: string, options: AnalyzeOptions): Promise<string> {
+  // Ensure we have an API key via config file, seeding from CLI option if provided
+  const apiKey = await ensureAndGetOpenAIKey(options.apiKey);
+
+  const openai = new OpenAI({
+    apiKey,
+  });
+
+  const prompt = `Analyze the following git diff and generate a concise, conventional commit message.
+
+The commit message should follow conventional commit format: "type(scope): description"
+
+Common types:
+- feat: new features
+- fix: bug fixes
+- docs: documentation changes
+- style: formatting, missing semicolons, etc.
+- refactor: code refactoring
+- test: adding or updating tests
+- chore: maintenance tasks, dependency updates, version bumps
+
+Git diff:
+${diff}
+
+Respond with only the commit message, no additional text or quotes.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: options.model || 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 100,
+      temperature: 0.3,
+    });
+
+    const response = completion.choices[0]?.message?.content?.trim();
+
+    if (!response) {
+      throw new Error('No response from OpenAI');
+    }
+
+    // Clean up the response (remove quotes if present)
+    const cleanMessage = response.replace(/^["']|["']$/g, '');
+
+    return cleanMessage;
+  } catch (error) {
+    throw new Error(`OpenAI API error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
