@@ -43,7 +43,14 @@ aibump
    - **Helm-only changes**: Bumps version in `helm/Chart.yaml`
    - **App changes**: Bumps `package.json` version and syncs `appVersion` in `helm/Chart.yaml`
    - **Mixed changes**: Bumps both versions appropriately
-6. Generates a conventional commit message using OpenAI and commits all changes (unless `--no-commit` is used)
+6. Generates a structured commit message using OpenAI and commits all changes (unless `--no-commit` is used)
+
+## Commit Message Format
+
+The tool generates structured commit messages with:
+- A conventional commit header: `type(scope): brief summary`
+- A bullet list highlighting the most important changes
+- Focus on what changed and its impact
 
 ## Example
 
@@ -65,6 +72,10 @@ Running: npm version minor
 Updated Helm chart appVersion to 1.1.0
 Version bump completed successfully.
 Committed changes with message: feat: add new feature logging
+
+- Add console logging for new feature
+- Update version to 1.1.0
+- Sync Helm chart appVersion
 ```
 
 ## Helm Chart Support

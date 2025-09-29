@@ -451,9 +451,15 @@ async function generateCommitMessage(diff: string, options: AnalyzeOptions): Pro
     apiKey,
   });
 
-  const prompt = `Analyze the following git diff and generate a concise, conventional commit message.
+  const prompt = `Analyze the following git diff and generate a structured commit message.
 
-The commit message should follow conventional commit format: "type(scope): description"
+The commit message should follow this format:
+
+type(scope): Brief summary of changes
+
+- Bullet point highlighting key change 1
+- Bullet point highlighting key change 2
+- Bullet point highlighting key change 3
 
 Common types:
 - feat: new features
@@ -464,16 +470,23 @@ Common types:
 - test: adding or updating tests
 - chore: maintenance tasks, dependency updates, version bumps
 
+Guidelines:
+- Keep the summary line concise (under 50 characters)
+- Include 2-4 bullet points highlighting the most important changes
+- Focus on what changed, not how it was implemented
+- Use present tense for the summary and bullet points
+- Be specific about the impact or functionality
+
 Git diff:
 ${diff}
 
-Respond with only the commit message, no additional text or quotes.`;
+Respond with only the commit message in the specified format, no additional text or quotes.`;
 
   try {
     const completion = await openai.chat.completions.create({
       model: options.model || 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 100,
+      max_tokens: 200,
       temperature: 0.3,
     });
 
