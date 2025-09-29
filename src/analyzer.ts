@@ -484,7 +484,7 @@ Respond with only the commit message in the specified format, no additional text
 
   try {
     const completion = await openai.chat.completions.create({
-      model: options.model || 'gpt-4o-mini',
+      model: options.model || 'gpt-5-nano',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 200,
       temperature: 0.3,
