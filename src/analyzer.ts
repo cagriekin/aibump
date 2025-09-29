@@ -184,8 +184,7 @@ async function getStagedChanges(): Promise<string> {
     }
 
     // Get diff for staged files
-    const diff = await git.diff(['--cached', ...relevantFiles]);
-    return diff;
+    return await git.diff(['--cached', ...relevantFiles]);
   } catch (error) {
     throw new Error(`Failed to get staged git diff: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -231,8 +230,10 @@ async function getUnstagedChanges(): Promise<string> {
     // Separate modified/deleted files from newly created files
     const modifiedFiles = relevantFiles.filter(file => 
       status.modified.includes(file) || 
-      status.deleted.includes(file) || 
       status.renamed.some(r => r.to === file)
+    );
+    const deletedFiles = relevantFiles.filter(file => 
+      status.deleted.includes(file)
     );
     const newFiles = relevantFiles.filter(file => 
       status.created.includes(file) || 
@@ -241,9 +242,25 @@ async function getUnstagedChanges(): Promise<string> {
 
     let diff = '';
 
-    // Get diff for modified/deleted files
+    // Get diff for modified files (excluding deleted files)
     if (modifiedFiles.length > 0) {
       diff += await git.diff(modifiedFiles);
+    }
+
+    // Handle deleted files separately
+    if (deletedFiles.length > 0) {
+      try {
+        diff += await git.diff(['--', ...deletedFiles]);
+      } catch (error) {
+        // If the above fails, try handling each deleted file individually
+        for (const file of deletedFiles) {
+          try {
+            diff += await git.diff(['--', file]);
+          } catch (fileError) {
+            console.warn(`Warning: Could not get diff for deleted file ${file}: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+          }
+        }
+      }
     }
 
     // Handle newly created files by reading their content
@@ -303,6 +320,7 @@ function detectChangeType(changes: string): ChangeType {
   let helmChanges = false;
   let helmScriptChanges = false;
   let appChanges = false;
+  let helmNonScriptChanges = false;
 
   // File extensions that are considered Helm scripts
   const helmScriptExtensions = ['.sh', '.bash', '.py', '.js', '.ts', '.rb', '.pl', '.ps1', '.bat', '.cmd'];
@@ -328,6 +346,9 @@ function detectChangeType(changes: string): ChangeType {
       
       if (isHelmScript) {
         helmScriptChanges = true;
+      } else {
+        // This is a helm change but not a script
+        helmNonScriptChanges = true;
       }
     }
     // Check for app changes (everything except helm directory)
@@ -336,28 +357,9 @@ function detectChangeType(changes: string): ChangeType {
     }
   }
 
-  // If only Helm scripts changed, treat as helm-only (don't bump package.json)
-  if (helmChanges && helmScriptChanges && !appChanges) {
-    // Check if ALL helm changes are script changes
-    const allHelmChangesAreScripts = lines.every(line => {
-      if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('@@') || line.trim() === '') {
-        return true; // Skip metadata lines
-      }
-      if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
-        return helmScriptExtensions.some(ext => 
-          line.includes(`helm/`) && (
-            line.includes(ext) || 
-            line.includes(`scripts/`) ||
-            line.includes(`hooks/`)
-          )
-        );
-      }
-      return true; // Non-helm lines are fine
-    });
-    
-    if (allHelmChangesAreScripts) {
-      return { type: 'helm-only', helmChanges: true, appChanges: false };
-    }
+  // If only Helm scripts changed (no other helm changes, no app changes), treat as helm-only
+  if (helmChanges && helmScriptChanges && !helmNonScriptChanges && !appChanges) {
+    return { type: 'helm-only', helmChanges: true, appChanges: false };
   }
 
   if (helmChanges && appChanges) {
@@ -468,13 +470,27 @@ PATCH (bug fixes - backwards compatible):
 - Internal refactoring that doesn't affect public interfaces
 - Fixing CLI command behavior without changing the interface
 - Improving error messages or logging
+- Deployment configuration changes (resource limits, replica counts, scaling settings)
+- Infrastructure changes that don't affect application behavior
+- Configuration cleanup or optimization
+- Environment-specific configuration adjustments
 
 CRITICAL GUIDANCE:
 - Only use MAJOR if existing code/scripts using this tool would break
 - Adding new CLI options (like --new-flag) is MINOR, not MAJOR
 - Fixing bugs in existing functionality is PATCH, not MAJOR
 - Internal code changes that don't affect the public interface are PATCH
+- Deployment/infrastructure configuration changes are PATCH, not MAJOR
+- Resource limit adjustments, replica count changes, and scaling configuration are PATCH
 - When in doubt between MINOR and PATCH, choose PATCH for bug fixes and MINOR for new features
+- When in doubt between MAJOR and MINOR, choose MINOR unless there are clear breaking changes
+
+EXAMPLES:
+- Changing CPU/memory limits in deployment configs: PATCH
+- Adjusting replica counts or scaling settings: PATCH
+- Removing unused configuration sections: PATCH
+- Adding new deployment environments: MINOR
+- Changing API endpoints or breaking existing functionality: MAJOR
 
 Git diff:
 ${changes}
