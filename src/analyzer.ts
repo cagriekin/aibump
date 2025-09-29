@@ -4,6 +4,7 @@ import simpleGit from 'simple-git';
 import OpenAI from 'openai';
 import { execa } from 'execa';
 import * as yaml from 'js-yaml';
+import { ensureAndGetOpenAIKey } from './config';
 
 export interface AnalyzeOptions {
   apiKey?: string;
@@ -190,13 +191,11 @@ function bumpVersion(version: string, type: 'major' | 'minor' | 'patch'): string
 }
 
 async function analyzeWithOpenAI(changes: string, options: AnalyzeOptions): Promise<'major' | 'minor' | 'patch'> {
-  const apiKey = options.apiKey || process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('OpenAI API key not provided. Use --api-key option or set OPENAI_API_KEY environment variable.');
-  }
+  // Ensure we have an API key via config file, seeding from CLI option if provided
+  const apiKey = await ensureAndGetOpenAIKey(options.apiKey);
 
   const openai = new OpenAI({
-    apiKey: apiKey,
+    apiKey,
   });
 
   const prompt = `Analyze the following git diff and determine what type of version bump is appropriate according to semantic versioning (semver):
@@ -269,20 +268,32 @@ async function bumpHelmChartVersion(versionType: 'major' | 'minor' | 'patch'): P
 }
 
 async function bumpNpmVersion(versionType: 'major' | 'minor' | 'patch'): Promise<void> {
-  const npmArgs = ['version', versionType];
-  console.log(`Running: npm ${npmArgs.join(' ')}`);
+  const packageJsonPath = join(process.cwd(), 'package.json');
 
-  const result = await execa('npm', npmArgs, {
-    stdio: 'inherit',
-    cwd: process.cwd(),
-  });
+  try {
+    // Read current package.json
+    const packageJsonContent = readFileSync(packageJsonPath, 'utf-8');
+    const packageJson = JSON.parse(packageJsonContent);
 
-  if (result.exitCode !== 0) {
-    throw new Error(`npm version command failed with exit code ${result.exitCode}`);
+    if (!packageJson.version) {
+      throw new Error('package.json does not contain a version field.');
+    }
+
+    // Calculate new version
+    const newVersion = bumpVersion(packageJson.version, versionType);
+    console.log(`Bumping npm version from ${packageJson.version} to ${newVersion}`);
+
+    // Update package.json
+    packageJson.version = newVersion;
+    writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+
+    console.log(`Updated package.json version to ${newVersion}`);
+
+    // Update package-lock.json with the new version
+    await updatePackageLockVersion();
+  } catch (error) {
+    throw new Error(`Failed to bump npm version: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  // Update package-lock.json with the new version
-  await updatePackageLockVersion();
 }
 
 async function syncHelmAppVersion(): Promise<void> {
@@ -314,6 +325,12 @@ async function updatePackageLockVersion(): Promise<void> {
     const packageJson = JSON.parse(packageJsonContent);
     const newVersion = packageJson.version;
 
+    // Check if package-lock.json exists
+    if (!existsSync(packageLockPath)) {
+      console.log('package-lock.json not found. Skipping package-lock.json update.');
+      return;
+    }
+
     // Read and update package-lock.json
     const packageLockContent = readFileSync(packageLockPath, 'utf-8');
     const packageLock = JSON.parse(packageLockContent);
@@ -332,7 +349,6 @@ async function updatePackageLockVersion(): Promise<void> {
     console.log(`Updated package-lock.json version to ${newVersion}`);
   } catch (error) {
     // If package-lock.json doesn't exist or can't be updated, that's okay
-    // The npm version command will have already updated package.json
     console.log('Warning: Could not update package-lock.json version:', error instanceof Error ? error.message : String(error));
   }
 }
