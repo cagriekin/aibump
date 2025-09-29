@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import simpleGit from 'simple-git';
 import OpenAI from 'openai';
 import { execa } from 'execa';
@@ -129,6 +130,7 @@ async function getUnstagedChanges(): Promise<string> {
       ...status.modified,
       ...status.created,
       ...status.deleted,
+      ...status.not_added, // Include untracked files
       ...status.renamed.map(r => r.to)
     ];
 
@@ -155,8 +157,49 @@ async function getUnstagedChanges(): Promise<string> {
       return '';
     }
 
-    // Get diff only for relevant files
-    const diff = await git.diff(relevantFiles);
+    // Separate modified/deleted files from newly created files
+    const modifiedFiles = relevantFiles.filter(file => 
+      status.modified.includes(file) || 
+      status.deleted.includes(file) || 
+      status.renamed.some(r => r.to === file)
+    );
+    const newFiles = relevantFiles.filter(file => 
+      status.created.includes(file) || 
+      status.not_added.includes(file)
+    );
+
+    let diff = '';
+
+    // Get diff for modified/deleted files
+    if (modifiedFiles.length > 0) {
+      diff += await git.diff(modifiedFiles);
+    }
+
+    // Handle newly created files by reading their content
+    for (const file of newFiles) {
+      try {
+        const fileContent = await git.show(`:${file}`).catch(() => {
+          // If file is not in index, read it directly from filesystem
+          return readFileSync(file, 'utf8');
+        });
+        
+        diff += `diff --git a/${file} b/${file}\n`;
+        diff += `new file mode 100644\n`;
+        diff += `index 0000000..${createHash('sha1').update(fileContent).digest('hex').substring(0, 7)}\n`;
+        diff += `--- /dev/null\n`;
+        diff += `+++ b/${file}\n`;
+        
+        // Add file content with + prefix
+        const lines = fileContent.split('\n');
+        for (const line of lines) {
+          diff += `+${line}\n`;
+        }
+        diff += '\n';
+      } catch (error) {
+        console.warn(`Warning: Could not read content of new file ${file}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     return diff;
   } catch (error) {
     throw new Error(`Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`);
