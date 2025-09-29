@@ -12,7 +12,6 @@ program
   .option('-k, --api-key <key>', 'OpenAI API key (or set OPENAI_API_KEY env var)')
   .option('-m, --model <model>', 'OpenAI model to use', 'gpt-4')
   .option('--dry-run', 'Show what would be done without making changes')
-  .option('-f, --force', 'Force version bump even with uncommitted changes')
   .action(async (options) => {
     try {
       await analyzeChanges(options);

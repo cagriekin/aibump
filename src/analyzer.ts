@@ -3,12 +3,27 @@ import { join } from 'path';
 import simpleGit from 'simple-git';
 import OpenAI from 'openai';
 import { execa } from 'execa';
+import * as yaml from 'js-yaml';
 
 export interface AnalyzeOptions {
   apiKey?: string;
   model?: string;
   dryRun?: boolean;
-  force?: boolean;
+}
+
+export interface ChangeType {
+  type: 'helm-only' | 'app-only' | 'both' | 'none';
+  helmChanges: boolean;
+  appChanges: boolean;
+}
+
+export interface HelmChart {
+  apiVersion?: string;
+  name?: string;
+  version?: string;
+  appVersion?: string;
+  description?: string;
+  [key: string]: any;
 }
 
 export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
@@ -25,18 +40,31 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
 
   console.log('Found unstaged changes:\n', changes);
 
+  // Determine change type (helm vs app)
+  const changeType = detectChangeType(changes);
+  console.log(`Change type detected: ${changeType.type}`);
+
+  if (changeType.type === 'none') {
+    console.log('No relevant changes found. Nothing to version.');
+    return;
+  }
+
   // Analyze with OpenAI
   const versionType = await analyzeWithOpenAI(changes, options);
 
   console.log(`Recommended version bump: ${versionType}`);
 
   if (options.dryRun) {
-    console.log(`Would run: npm version ${versionType}`);
+    if (changeType.type === 'helm-only') {
+      console.log(`Would bump Helm chart version: ${versionType}`);
+    } else if (changeType.type === 'app-only' || changeType.type === 'both') {
+      console.log(`Would run: npm version ${versionType} and update Helm appVersion`);
+    }
     return;
   }
 
-  // Execute version bump
-  await executeVersionBump(versionType, options.force);
+  // Execute appropriate version bump based on change type
+  await executeVersionBump(versionType, changeType);
 }
 
 async function validateEnvironment(): Promise<void> {
@@ -77,6 +105,87 @@ async function getUnstagedChanges(): Promise<string> {
     return diff;
   } catch (error) {
     throw new Error(`Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function detectChangeType(changes: string): ChangeType {
+  const lines = changes.split('\n');
+  let helmChanges = false;
+  let appChanges = false;
+
+  for (const line of lines) {
+    // Check for helm directory changes
+    if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
+      helmChanges = true;
+    }
+    // Check for app changes (everything except helm directory)
+    if (!line.startsWith('---') && !line.startsWith('+++') && !line.startsWith('@@') &&
+      !line.includes('helm/') && line.trim() !== '') {
+      appChanges = true;
+    }
+  }
+
+  if (helmChanges && appChanges) {
+    return { type: 'both', helmChanges: true, appChanges: true };
+  } else if (helmChanges) {
+    return { type: 'helm-only', helmChanges: true, appChanges: false };
+  } else if (appChanges) {
+    return { type: 'app-only', helmChanges: false, appChanges: true };
+  } else {
+    return { type: 'none', helmChanges: false, appChanges: false };
+  }
+}
+
+function getHelmChartPath(): string {
+  return join(process.cwd(), 'helm', 'Chart.yaml');
+}
+
+function readHelmChart(): HelmChart | null {
+  const chartPath = getHelmChartPath();
+
+  if (!existsSync(chartPath)) {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(chartPath, 'utf-8');
+    return yaml.load(content) as HelmChart;
+  } catch (error) {
+    throw new Error(`Failed to read Helm Chart.yaml: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function writeHelmChart(chart: HelmChart): void {
+  const chartPath = getHelmChartPath();
+
+  try {
+    const content = yaml.dump(chart, {
+      lineWidth: -1,
+      noRefs: true,
+      sortKeys: false
+    });
+    writeFileSync(chartPath, content);
+  } catch (error) {
+    throw new Error(`Failed to write Helm Chart.yaml: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function bumpVersion(version: string, type: 'major' | 'minor' | 'patch'): string {
+  const parts = version.split('.').map(Number);
+
+  if (parts.length !== 3 || parts.some(isNaN)) {
+    throw new Error(`Invalid version format: ${version}`);
+  }
+
+  switch (type) {
+    case 'major':
+      return `${parts[0] + 1}.0.0`;
+    case 'minor':
+      return `${parts[0]}.${parts[1] + 1}.0`;
+    case 'patch':
+      return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+    default:
+      throw new Error(`Invalid version type: ${type}`);
   }
 }
 
@@ -121,43 +230,78 @@ Respond with only one word: "major", "minor", or "patch".`;
   }
 }
 
-async function executeVersionBump(versionType: 'major' | 'minor' | 'patch', force: boolean = false): Promise<void> {
+async function executeVersionBump(versionType: 'major' | 'minor' | 'patch', changeType: ChangeType): Promise<void> {
   try {
-    // Check if git working directory is clean (unless force is enabled)
-    if (!force) {
-      const git = simpleGit();
-      const status = await git.status();
+    // Note: We intentionally don't check for clean working directory here
+    // because we want to analyze and version based on unstaged changes
 
-      if (!status.isClean()) {
-        const uncommittedFiles = [
-          ...status.modified,
-          ...status.not_added,
-          ...status.deleted,
-          ...status.renamed.map(r => r.to)
-        ];
-
-        throw new Error(`Git working directory is not clean. The following files have uncommitted changes:\n${uncommittedFiles.map(f => `  - ${f}`).join('\n')}\n\nPlease commit or stash these changes before running the version bump, or use --force flag to proceed anyway.`);
-      }
+    if (changeType.type === 'helm-only') {
+      // Only bump Helm chart version
+      await bumpHelmChartVersion(versionType);
+    } else if (changeType.type === 'app-only' || changeType.type === 'both') {
+      // Bump npm package version and sync with Helm appVersion
+      await bumpNpmVersion(versionType);
+      await syncHelmAppVersion();
     }
-
-    const npmArgs = force ? ['version', versionType, '--force'] : ['version', versionType];
-    console.log(`Running: npm ${npmArgs.join(' ')}`);
-    const result = await execa('npm', npmArgs, {
-      stdio: 'inherit',
-      cwd: process.cwd(),
-    });
-
-    if (result.exitCode !== 0) {
-      throw new Error(`npm version command failed with exit code ${result.exitCode}`);
-    }
-
-    // Update package-lock.json with the new version
-    await updatePackageLockVersion();
 
     console.log('Version bump completed successfully.');
   } catch (error) {
     throw new Error(`Failed to execute version bump: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+async function bumpHelmChartVersion(versionType: 'major' | 'minor' | 'patch'): Promise<void> {
+  const chart = readHelmChart();
+
+  if (!chart) {
+    throw new Error('Helm Chart.yaml not found. Cannot bump Helm chart version.');
+  }
+
+  if (!chart.version) {
+    throw new Error('Helm Chart.yaml does not contain a version field.');
+  }
+
+  const newVersion = bumpVersion(chart.version, versionType);
+  chart.version = newVersion;
+
+  writeHelmChart(chart);
+  console.log(`Updated Helm chart version to ${newVersion}`);
+}
+
+async function bumpNpmVersion(versionType: 'major' | 'minor' | 'patch'): Promise<void> {
+  const npmArgs = ['version', versionType];
+  console.log(`Running: npm ${npmArgs.join(' ')}`);
+
+  const result = await execa('npm', npmArgs, {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+  });
+
+  if (result.exitCode !== 0) {
+    throw new Error(`npm version command failed with exit code ${result.exitCode}`);
+  }
+
+  // Update package-lock.json with the new version
+  await updatePackageLockVersion();
+}
+
+async function syncHelmAppVersion(): Promise<void> {
+  const chart = readHelmChart();
+
+  if (!chart) {
+    console.log('Helm Chart.yaml not found. Skipping appVersion sync.');
+    return;
+  }
+
+  // Read the updated version from package.json
+  const packageJsonPath = join(process.cwd(), 'package.json');
+  const packageJsonContent = readFileSync(packageJsonPath, 'utf-8');
+  const packageJson = JSON.parse(packageJsonContent);
+  const newAppVersion = packageJson.version;
+
+  chart.appVersion = newAppVersion;
+  writeHelmChart(chart);
+  console.log(`Updated Helm chart appVersion to ${newAppVersion}`);
 }
 
 async function updatePackageLockVersion(): Promise<void> {
