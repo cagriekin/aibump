@@ -10,14 +10,17 @@ function parseKeyFromConfig(content: string): string | null {
   const trimmed = content.trim();
   if (!trimmed) return null;
 
-  // Try KEY=VALUE format first
-  const match = trimmed.match(/^OPENAI_API_KEY\s*=\s*(.+)$/m);
-  if (match && match[1]) {
-    return match[1].trim();
+  try {
+    const config = JSON.parse(trimmed);
+    if (config && typeof config.openaiApiKey === 'string') {
+      return config.openaiApiKey;
+    }
+  } catch (error) {
+    // Invalid JSON format
+    return null;
   }
 
-  // Fallback: treat entire content as the key
-  return trimmed;
+  return null;
 }
 
 async function promptForApiKey(): Promise<string> {
@@ -68,8 +71,9 @@ export async function ensureAndGetOpenAIKey(initialFromCli?: string): Promise<st
     throw new Error('OpenAI API key is required.');
   }
 
-  // Write config file with secure permissions
-  writeFileSync(CONFIG_PATH, `OPENAI_API_KEY=${key}\n`, { mode: 0o600 });
+  // Write config file with secure permissions in JSON format
+  const config = { openaiApiKey: key };
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
   console.log(`Saved OpenAI API key to ${CONFIG_PATH}`);
 
   return key;

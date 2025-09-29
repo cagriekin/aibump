@@ -9,15 +9,7 @@ An AI-powered command line tool that analyzes your git unstaged changes and auto
 ## Installation
 
 ```bash
-npm install -g .
-```
-
-Or run locally:
-
-```bash
-npm install
-npm run build
-npm link
+npm install aibump -g
 ```
 
 ## Usage
@@ -58,10 +50,7 @@ aibump
 ```bash
 cd my-npm-project
 # Make some changes...
-aibump --api-key your-openai-key
-
-# If you have uncommitted changes and want to force the version bump:
-aibump --api-key your-openai-key --force
+aibump
 ```
 
 Output:
