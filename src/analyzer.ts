@@ -53,16 +53,16 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   // Determine change type (helm vs app)
   const detectedChangeType = detectChangeType(combined);
   console.log(`Change type detected: ${detectedChangeType.type}`);
-  
+
   // Add specific logging for Helm scripts
   if (detectedChangeType.type === 'helm-only') {
     const hasHelmScripts = combined.includes('helm/') && (
-      combined.includes('.sh') || combined.includes('.bash') || combined.includes('.py') || 
+      combined.includes('.sh') || combined.includes('.bash') || combined.includes('.py') ||
       combined.includes('.js') || combined.includes('.ts') || combined.includes('.rb') ||
       combined.includes('.pl') || combined.includes('.ps1') || combined.includes('.bat') ||
       combined.includes('.cmd') || combined.includes('scripts/') || combined.includes('hooks/')
     );
-    
+
     if (hasHelmScripts) {
       console.log('Note: Only Helm scripts detected - package.json version will not be bumped');
     }
@@ -228,15 +228,15 @@ async function getUnstagedChanges(): Promise<string> {
     }
 
     // Separate modified/deleted files from newly created files
-    const modifiedFiles = relevantFiles.filter(file => 
-      status.modified.includes(file) || 
+    const modifiedFiles = relevantFiles.filter(file =>
+      status.modified.includes(file) ||
       status.renamed.some(r => r.to === file)
     );
-    const deletedFiles = relevantFiles.filter(file => 
+    const deletedFiles = relevantFiles.filter(file =>
       status.deleted.includes(file)
     );
-    const newFiles = relevantFiles.filter(file => 
-      status.created.includes(file) || 
+    const newFiles = relevantFiles.filter(file =>
+      status.created.includes(file) ||
       status.not_added.includes(file)
     );
 
@@ -270,13 +270,13 @@ async function getUnstagedChanges(): Promise<string> {
           // If file is not in index, read it directly from filesystem
           return readFileSync(file, 'utf8');
         });
-        
+
         diff += `diff --git a/${file} b/${file}\n`;
         diff += `new file mode 100644\n`;
         diff += `index 0000000..${createHash('sha1').update(fileContent).digest('hex').substring(0, 7)}\n`;
         diff += `--- /dev/null\n`;
         diff += `+++ b/${file}\n`;
-        
+
         // Add file content with + prefix
         const lines = fileContent.split('\n');
         for (const line of lines) {
@@ -297,7 +297,7 @@ async function getUnstagedChanges(): Promise<string> {
 async function getChanges(options: AnalyzeOptions): Promise<{ staged: string; unstaged: string; combined: string }> {
   const staged = options.staged || options.both || (!options.staged && !options.unstaged && !options.both) ? await getStagedChanges() : '';
   const unstaged = options.unstaged || options.both || (!options.staged && !options.unstaged && !options.both) ? await getUnstagedChanges() : '';
-  
+
   let combined = '';
   if (staged && unstaged) {
     combined = `=== STAGED CHANGES ===\n${staged}\n\n=== UNSTAGED CHANGES ===\n${unstaged}`;
@@ -306,7 +306,7 @@ async function getChanges(options: AnalyzeOptions): Promise<{ staged: string; un
   } else if (unstaged) {
     combined = `=== UNSTAGED CHANGES ===\n${unstaged}`;
   }
-  
+
   return { staged, unstaged, combined };
 }
 
@@ -334,16 +334,16 @@ function detectChangeType(changes: string): ChangeType {
     // Check for helm directory changes (excluding Chart.yaml which is handled separately)
     if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
       helmChanges = true;
-      
+
       // Check if this is a Helm script file
-      const isHelmScript = helmScriptExtensions.some(ext => 
+      const isHelmScript = helmScriptExtensions.some(ext =>
         line.includes(`helm/`) && (
-          line.includes(ext) || 
+          line.includes(ext) ||
           line.includes(`scripts/`) ||
           line.includes(`hooks/`)
         )
       );
-      
+
       if (isHelmScript) {
         helmScriptChanges = true;
       } else {
@@ -444,11 +444,11 @@ MAJOR (breaking changes - incompatible API changes):
 - Changing return types of public APIs
 - Removing or renaming public properties/fields
 - Changing behavior that breaks existing functionality
-- Removing configuration options or changing their format
-- Changing environment variable names or formats
+- Removing required configuration options or changing their format in breaking ways
+- Changing environment variable names that break existing deployments
 - Breaking changes to CLI commands or their arguments
 - Changing the format of output or responses
-- Removing CLI options or changing their behavior
+- Removing CLI options or changing their behavior in breaking ways
 
 MINOR (new features - backwards compatible):
 - Adding new functions, methods, classes, or exports
@@ -474,14 +474,24 @@ PATCH (bug fixes - backwards compatible):
 - Infrastructure changes that don't affect application behavior
 - Configuration cleanup or optimization
 - Environment-specific configuration adjustments
+- Changing port numbers, service configurations, or deployment settings
+- Renaming environment variables that don't break existing deployments
+- Updating Helm chart values (ports, resource limits, scaling settings)
 
-CRITICAL GUIDANCE:
+CRITICAL GUIDANCE FOR CONFIGURATION CHANGES:
+- Port number changes are PATCH (e.g., changing targetPort from 3020 to 80)
+- Environment variable renames are PATCH if they don't break existing deployments
+- Helm values.yaml changes (ports, resources, scaling) are PATCH
+- Only use MAJOR for configuration changes that would break existing deployments
+- Adding new configuration options is MINOR
+- Changing default values without breaking existing configs is PATCH
+- Resource limit adjustments, replica count changes, and scaling configuration are PATCH
+
+GENERAL GUIDANCE:
 - Only use MAJOR if existing code/scripts using this tool would break
 - Adding new CLI options (like --new-flag) is MINOR, not MAJOR
 - Fixing bugs in existing functionality is PATCH, not MAJOR
 - Internal code changes that don't affect the public interface are PATCH
-- Deployment/infrastructure configuration changes are PATCH, not MAJOR
-- Resource limit adjustments, replica count changes, and scaling configuration are PATCH
 - When in doubt between MINOR and PATCH, choose PATCH for bug fixes and MINOR for new features
 - When in doubt between MAJOR and MINOR, choose MINOR unless there are clear breaking changes
 
@@ -489,6 +499,8 @@ EXAMPLES:
 - Changing CPU/memory limits in deployment configs: PATCH
 - Adjusting replica counts or scaling settings: PATCH
 - Removing unused configuration sections: PATCH
+- Changing targetPort in Helm values: PATCH
+- Renaming environment variables: PATCH
 - Adding new deployment environments: MINOR
 - Changing API endpoints or breaking existing functionality: MAJOR
 
