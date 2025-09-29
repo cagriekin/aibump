@@ -1,6 +1,6 @@
-# npm-version-tool
+# aibump
 
-A command line tool that analyzes your git unstaged changes and automatically determines whether to bump the npm version as major, minor, or patch using OpenAI's API. It intelligently handles both Node.js applications and Helm charts:
+An AI-powered command line tool that analyzes your git unstaged changes and automatically determines whether to bump the npm version as major, minor, or patch using OpenAI's API. It intelligently handles both Node.js applications and Helm charts:
 
 - **Helm-only changes**: Bumps the version in `helm/Chart.yaml` without touching `package.json`
 - **App changes**: Bumps `package.json` version and syncs `appVersion` in `helm/Chart.yaml` to match
@@ -25,7 +25,7 @@ npm link
 Navigate to any npm project with git and run:
 
 ```bash
-npm-version-tool
+aibump
 ```
 
 ## Options
@@ -58,10 +58,10 @@ npm-version-tool
 ```bash
 cd my-npm-project
 # Make some changes...
-npm-version-tool --api-key your-openai-key
+aibump --api-key your-openai-key
 
 # If you have uncommitted changes and want to force the version bump:
-npm-version-tool --api-key your-openai-key --force
+aibump --api-key your-openai-key --force
 ```
 
 Output:

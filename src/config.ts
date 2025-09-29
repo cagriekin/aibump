@@ -4,7 +4,7 @@ import os from 'os';
 import readline from 'readline';
 
 const CONFIG_DIR = join(os.homedir(), '.config');
-const CONFIG_PATH = join(CONFIG_DIR, 'version-tool');
+const CONFIG_PATH = join(CONFIG_DIR, 'aibump');
 
 function parseKeyFromConfig(content: string): string | null {
   const trimmed = content.trim();
@@ -21,7 +21,7 @@ function parseKeyFromConfig(content: string): string | null {
 }
 
 async function promptForApiKey(): Promise<string> {
-  const question = 'Enter your OpenAI API key (will be saved to ~/.config/version-tool): ';
+  const question = 'Enter your OpenAI API key (will be saved to ~/.config/aibump): ';
 
   return new Promise<string>((resolve) => {
     const rl = readline.createInterface({

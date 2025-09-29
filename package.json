@@ -1,10 +1,10 @@
 {
-  "name": "npm-version-tool",
+  "name": "aibump",
   "version": "1.0.0",
-  "description": "CLI tool that analyzes git changes and automatically bumps npm version",
+  "description": "AI-powered CLI tool that analyzes git changes and automatically bumps npm and Helm versions",
   "main": "dist/index.js",
   "bin": {
-    "npm-version-tool": "./dist/index.js"
+    "aibump": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -12,11 +12,14 @@
     "dev": "ts-node --watch src/index.ts"
   },
   "keywords": [
+    "ai",
     "npm",
     "version",
     "git",
     "cli",
-    "openai"
+    "openai",
+    "helm",
+    "semantic-versioning"
   ],
   "author": "",
   "license": "MIT",
