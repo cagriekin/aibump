@@ -46,6 +46,20 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   // Determine change type (helm vs app)
   const changeType = detectChangeType(changes);
   console.log(`Change type detected: ${changeType.type}`);
+  
+  // Add specific logging for Helm scripts
+  if (changeType.type === 'helm-only') {
+    const hasHelmScripts = changes.includes('helm/') && (
+      changes.includes('.sh') || changes.includes('.bash') || changes.includes('.py') || 
+      changes.includes('.js') || changes.includes('.ts') || changes.includes('.rb') ||
+      changes.includes('.pl') || changes.includes('.ps1') || changes.includes('.bat') ||
+      changes.includes('.cmd') || changes.includes('scripts/') || changes.includes('hooks/')
+    );
+    
+    if (hasHelmScripts) {
+      console.log('Note: Only Helm scripts detected - package.json version will not be bumped');
+    }
+  }
 
   if (changeType.type === 'none') {
     console.log('No relevant changes found. Nothing to version.');
@@ -214,7 +228,11 @@ function detectChangeType(changes: string): ChangeType {
 
   const lines = changes.split('\n');
   let helmChanges = false;
+  let helmScriptChanges = false;
   let appChanges = false;
+
+  // File extensions that are considered Helm scripts
+  const helmScriptExtensions = ['.sh', '.bash', '.py', '.js', '.ts', '.rb', '.pl', '.ps1', '.bat', '.cmd'];
 
   for (const line of lines) {
     // Skip diff metadata lines
@@ -225,10 +243,47 @@ function detectChangeType(changes: string): ChangeType {
     // Check for helm directory changes (excluding Chart.yaml which is handled separately)
     if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
       helmChanges = true;
+      
+      // Check if this is a Helm script file
+      const isHelmScript = helmScriptExtensions.some(ext => 
+        line.includes(`helm/`) && (
+          line.includes(ext) || 
+          line.includes(`scripts/`) ||
+          line.includes(`hooks/`)
+        )
+      );
+      
+      if (isHelmScript) {
+        helmScriptChanges = true;
+      }
     }
     // Check for app changes (everything except helm directory)
     else if (!line.includes('helm/')) {
       appChanges = true;
+    }
+  }
+
+  // If only Helm scripts changed, treat as helm-only (don't bump package.json)
+  if (helmChanges && helmScriptChanges && !appChanges) {
+    // Check if ALL helm changes are script changes
+    const allHelmChangesAreScripts = lines.every(line => {
+      if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('@@') || line.trim() === '') {
+        return true; // Skip metadata lines
+      }
+      if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
+        return helmScriptExtensions.some(ext => 
+          line.includes(`helm/`) && (
+            line.includes(ext) || 
+            line.includes(`scripts/`) ||
+            line.includes(`hooks/`)
+          )
+        );
+      }
+      return true; // Non-helm lines are fine
+    });
+    
+    if (allHelmChangesAreScripts) {
+      return { type: 'helm-only', helmChanges: true, appChanges: false };
     }
   }
 

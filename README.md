@@ -3,6 +3,7 @@
 An AI-powered command line tool that analyzes your git unstaged changes and automatically determines whether to bump the npm version as major, minor, or patch using OpenAI's API. It intelligently handles both Node.js applications and Helm charts:
 
 - **Helm-only changes**: Bumps the version in `helm/Chart.yaml` without touching `package.json`
+- **Helm script changes**: Only bumps Helm chart version when only scripts (`.sh`, `.py`, `.js`, etc.) in `helm/scripts/` or `helm/hooks/` change
 - **App changes**: Bumps `package.json` version and syncs `appVersion` in `helm/Chart.yaml` to match
 - **Mixed changes**: Bumps both versions appropriately
 
@@ -41,6 +42,7 @@ aibump
 4. Sends the changes to OpenAI with a prompt asking for semantic version bump type
 5. Based on the change type and response:
    - **Helm-only changes**: Bumps version in `helm/Chart.yaml`
+   - **Helm script changes**: Only bumps Helm chart version (no package.json bump)
    - **App changes**: Bumps `package.json` version and syncs `appVersion` in `helm/Chart.yaml`
    - **Mixed changes**: Bumps both versions appropriately
 6. Generates a structured commit message using OpenAI and commits all changes (unless `--no-commit` is used)
@@ -83,6 +85,7 @@ Committed changes with message: feat: add new feature logging
 The tool automatically detects changes in your `helm/` directory and handles versioning appropriately:
 
 - **Helm-only changes**: Only bumps the `version` field in `helm/Chart.yaml`
+- **Helm script changes**: Only bumps Helm chart version when only scripts (`.sh`, `.py`, `.js`, `.ts`, `.rb`, `.pl`, `.ps1`, `.bat`, `.cmd`) in `helm/scripts/` or `helm/hooks/` directories change
 - **App changes**: Bumps `package.json` and sets `appVersion` in `helm/Chart.yaml` to match
 - **Mixed changes**: Bumps both versions
 
