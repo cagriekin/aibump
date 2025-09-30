@@ -82,7 +82,12 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
     if (detectedChangeType.type === 'helm-only') {
       console.log(`Would bump Helm chart version: ${versionType}`);
     } else if (detectedChangeType.type === 'app-only' || detectedChangeType.type === 'both') {
-      console.log(`Would run: npm version ${versionType} and update Helm appVersion`);
+      const packageJsonPath = join(process.cwd(), 'package.json');
+      if (existsSync(packageJsonPath)) {
+        console.log(`Would run: npm version ${versionType} and update Helm appVersion`);
+      } else {
+        console.log(`Would bump Helm chart version: ${versionType} (no package.json found)`);
+      }
     }
     return;
   }
@@ -114,21 +119,42 @@ async function validateEnvironment(): Promise<void> {
 
   // Check if package.json exists
   const packageJsonPath = join(process.cwd(), 'package.json');
-  if (!existsSync(packageJsonPath)) {
-    throw new Error('package.json not found. Please run this command from an npm project directory.');
+  const packageJsonExists = existsSync(packageJsonPath);
+
+  // Check if Helm Chart.yaml exists
+  const helmChartPath = getHelmChartPath();
+  const helmChartExists = existsSync(helmChartPath);
+
+  // At least one of package.json or Helm Chart.yaml must exist
+  if (!packageJsonExists && !helmChartExists) {
+    throw new Error('Neither package.json nor Helm Chart.yaml found. Please run this command from a project directory with either npm package or Helm chart.');
   }
 
-  // Validate package.json content
-  try {
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-    if (!packageJson.version) {
-      throw new Error('package.json does not contain a version field.');
+  // Validate package.json content if it exists
+  if (packageJsonExists) {
+    try {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+      if (!packageJson.version) {
+        throw new Error('package.json does not contain a version field.');
+      }
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error('package.json is not valid JSON.');
+      }
+      throw error;
     }
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error('package.json is not valid JSON.');
+  }
+
+  // Validate Helm Chart.yaml content if it exists
+  if (helmChartExists) {
+    try {
+      const chart = readHelmChart();
+      if (!chart || !chart.version) {
+        throw new Error('Helm Chart.yaml does not contain a version field.');
+      }
+    } catch (error) {
+      throw new Error(`Helm Chart.yaml validation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-    throw error;
   }
 }
 
@@ -322,6 +348,10 @@ function detectChangeType(changes: string): ChangeType {
   let appChanges = false;
   let helmNonScriptChanges = false;
 
+  // Check if package.json exists to determine if this is a JavaScript project
+  const packageJsonPath = join(process.cwd(), 'package.json');
+  const packageJsonExists = existsSync(packageJsonPath);
+
   // File extensions that are considered Helm scripts
   const helmScriptExtensions = ['.sh', '.bash', '.py', '.js', '.ts', '.rb', '.pl', '.ps1', '.bat', '.cmd'];
 
@@ -352,8 +382,25 @@ function detectChangeType(changes: string): ChangeType {
       }
     }
     // Check for app changes (everything except helm directory)
+    // If no package.json exists, treat all non-helm changes as helm-only since there's no JavaScript app
     else if (!line.includes('helm/')) {
-      appChanges = true;
+      if (packageJsonExists) {
+        appChanges = true;
+      } else {
+        // No package.json exists, so this is a helm-only repository
+        // Treat any non-helm changes as helm changes
+        helmChanges = true;
+        helmNonScriptChanges = true;
+      }
+    }
+  }
+
+  // If no package.json exists, this is a helm-only repository
+  if (!packageJsonExists) {
+    if (helmChanges) {
+      return { type: 'helm-only', helmChanges: true, appChanges: false };
+    } else {
+      return { type: 'none', helmChanges: false, appChanges: false };
     }
   }
 
@@ -584,9 +631,16 @@ async function executeVersionBump(versionType: 'major' | 'minor' | 'patch', chan
       // Only bump Helm chart version
       await bumpHelmChartVersion(versionType);
     } else if (changeType.type === 'app-only' || changeType.type === 'both') {
-      // Bump npm package version and sync with Helm appVersion
-      await bumpNpmVersion(versionType);
-      await syncHelmAppVersion();
+      // Check if package.json exists before trying to bump npm version
+      const packageJsonPath = join(process.cwd(), 'package.json');
+      if (existsSync(packageJsonPath)) {
+        // Bump npm package version and sync with Helm appVersion
+        await bumpNpmVersion(versionType);
+        await syncHelmAppVersion();
+      } else {
+        // No package.json exists, only bump Helm chart version
+        await bumpHelmChartVersion(versionType);
+      }
     }
 
     console.log('Version bump completed successfully.');
@@ -652,6 +706,12 @@ async function syncHelmAppVersion(): Promise<void> {
 
   // Read the updated version from package.json
   const packageJsonPath = join(process.cwd(), 'package.json');
+  
+  if (!existsSync(packageJsonPath)) {
+    console.log('package.json not found. Skipping appVersion sync.');
+    return;
+  }
+
   const packageJsonContent = readFileSync(packageJsonPath, 'utf-8');
   const packageJson = JSON.parse(packageJsonContent);
   const newAppVersion = packageJson.version;
