@@ -438,38 +438,62 @@ async function analyzeWithOpenAI(changes: string, options: AnalyzeOptions): Prom
 
 This is a CLI tool called "aibump" that analyzes git changes and automatically bumps npm and Helm versions using AI.
 
-MAJOR (breaking changes - incompatible API changes):
-- Removing public functions, methods, classes, or exports
-- Changing function signatures (parameter names, types, order, or removing parameters)
-- Changing return types of public APIs
-- Removing or renaming public properties/fields
-- Changing behavior that breaks existing functionality
-- Removing required configuration options or changing their format in breaking ways
-- Changing environment variable names that break existing deployments
-- Breaking changes to CLI commands or their arguments
-- Changing the format of output or responses
-- Removing CLI options or changing their behavior in breaking ways
+## MAJOR VERSION (X.0.0) - BREAKING CHANGES ONLY
+A major version bump is required ONLY when changes would break existing code, configurations, or deployments that depend on this software. This means:
 
-MINOR (new features - backwards compatible):
+**API BREAKING CHANGES:**
+- Changing HTTP API endpoint paths or URLs
+- Changing API request payload structure or required fields
+- Changing API response format or structure
+- Removing or changing required API headers
+- Changing message formats for consumed or published messages
+- Changing external service interfaces or protocols
+
+**CONFIGURATION BREAKING CHANGES:**
+- Removing required configuration options
+- Changing configuration format in ways that break existing configs
+- Changing environment variable names that break existing deployments
+- Changing required CLI command arguments or their behavior
+- Changing output formats that break existing parsers
+
+**DEPLOYMENT BREAKING CHANGES:**
+- Changes that would cause existing deployments to fail
+- Removing required environment variables
+- Changing required service dependencies or interfaces
+
+## MINOR VERSION (0.X.0) - NEW FEATURES (BACKWARDS COMPATIBLE)
+A minor version bump is for adding new functionality that doesn't break existing usage:
+
+**NEW FEATURES:**
 - Adding new functions, methods, classes, or exports
 - Adding optional parameters to existing functions
 - Adding new optional properties/fields
-- Adding new features without changing existing behavior
 - Adding new configuration options
 - Adding new CLI commands or optional arguments
-- Performance improvements that don't change behavior
 - Adding new output formats or options
-- Enhancing existing functionality without breaking changes
+- Adding new deployment environments or configurations
 
-PATCH (bug fixes - backwards compatible):
+**ENHANCEMENTS:**
+- Performance improvements that don't change behavior
+- Enhancing existing functionality without breaking changes
+- Adding new features that extend existing capabilities
+
+## PATCH VERSION (0.0.X) - EVERYTHING ELSE
+A patch version bump is for all other changes that don't add new features or break existing functionality:
+
+**BUG FIXES:**
 - Fixing bugs without changing public APIs
-- Updating internal implementation details
-- Fixing typos in documentation or comments
-- Updating dependencies (unless they introduce breaking changes)
 - Security fixes that don't change APIs
-- Internal refactoring that doesn't affect public interfaces
 - Fixing CLI command behavior without changing the interface
 - Improving error messages or logging
+
+**MAINTENANCE:**
+- Updating internal implementation details
+- Internal refactoring that doesn't affect public interfaces
+- Updating dependencies (unless they introduce breaking changes)
+- Fixing typos in documentation or comments
+
+**CONFIGURATION CHANGES:**
 - Deployment configuration changes (resource limits, replica counts, scaling settings)
 - Infrastructure changes that don't affect application behavior
 - Configuration cleanup or optimization
@@ -477,32 +501,54 @@ PATCH (bug fixes - backwards compatible):
 - Changing port numbers, service configurations, or deployment settings
 - Renaming environment variables that don't break existing deployments
 - Updating Helm chart values (ports, resource limits, scaling settings)
+- Changing default values without breaking existing configs
 
-CRITICAL GUIDANCE FOR CONFIGURATION CHANGES:
-- Port number changes are PATCH (e.g., changing targetPort from 3020 to 80)
-- Environment variable renames are PATCH if they don't break existing deployments
-- Helm values.yaml changes (ports, resources, scaling) are PATCH
-- Only use MAJOR for configuration changes that would break existing deployments
-- Adding new configuration options is MINOR
-- Changing default values without breaking existing configs is PATCH
-- Resource limit adjustments, replica count changes, and scaling configuration are PATCH
+## DECISION FRAMEWORK
 
-GENERAL GUIDANCE:
-- Only use MAJOR if existing code/scripts using this tool would break
-- Adding new CLI options (like --new-flag) is MINOR, not MAJOR
-- Fixing bugs in existing functionality is PATCH, not MAJOR
-- Internal code changes that don't affect the public interface are PATCH
-- When in doubt between MINOR and PATCH, choose PATCH for bug fixes and MINOR for new features
-- When in doubt between MAJOR and MINOR, choose MINOR unless there are clear breaking changes
+**Ask yourself: "Would this change break existing code or deployments?"**
+- YES → MAJOR
+- NO → Continue to next question
 
-EXAMPLES:
-- Changing CPU/memory limits in deployment configs: PATCH
-- Adjusting replica counts or scaling settings: PATCH
-- Removing unused configuration sections: PATCH
-- Changing targetPort in Helm values: PATCH
-- Renaming environment variables: PATCH
-- Adding new deployment environments: MINOR
-- Changing API endpoints or breaking existing functionality: MAJOR
+**Ask yourself: "Does this add new functionality or features?"**
+- YES → MINOR
+- NO → PATCH
+
+## CRITICAL RULES
+
+1. **MAJOR is ONLY for breaking changes** - If existing code/deployments would fail, it's MAJOR
+2. **Everything else is MINOR or PATCH** - There is no "undefined" category
+3. **When in doubt, choose the lower version** - Prefer PATCH over MINOR, MINOR over MAJOR
+4. **Configuration changes are almost always PATCH** unless they break existing deployments
+5. **Adding new options/features is MINOR** - Even if they're significant additions
+6. **Bug fixes are PATCH** - Even if they're important security fixes
+
+## EXAMPLES
+
+**MAJOR (Breaking):**
+- Removing a required CLI argument
+- Changing HTTP API endpoint paths
+- Changing API request/response payload structure
+- Removing a required environment variable
+- Changing message queue message formats
+
+**MINOR (New Features):**
+- Adding new CLI options
+- Adding new configuration parameters
+- Adding new API endpoints
+- Adding new deployment environments
+- Adding new internal functions or methods
+- Adding optional parameters to existing functions
+
+**PATCH (Everything Else):**
+- Fixing bugs
+- Updating dependencies
+- Changing port numbers
+- Adjusting resource limits
+- Security patches
+- Documentation updates
+- Internal refactoring
+- Changing internal function signatures
+- Removing unused internal functions
 
 Git diff:
 ${changes}

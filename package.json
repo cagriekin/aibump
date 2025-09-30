@@ -1,6 +1,6 @@
 {
   "name": "aibump",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "description": "AI-powered CLI tool that analyzes git changes and automatically bumps npm and Helm versions",
   "main": "dist/index.js",
   "bin": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "ts-node src/index.ts",
+    "start": "NODE_NO_WARNINGS=1 ts-node src/index.ts",
     "dev": "ts-node --watch src/index.ts"
   },
   "keywords": [
