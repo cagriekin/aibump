@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Suppress Node.js warnings
+process.env.NODE_NO_WARNINGS = '1';
+
 import { Command } from 'commander';
 import { analyzeChanges } from './analyzer';
 import { readFileSync } from 'fs';
