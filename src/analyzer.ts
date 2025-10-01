@@ -50,8 +50,11 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
 
   console.log(`Found relevant ${changeType} changes (large files excluded):\n`, combined);
 
+  // Filter out version-only changes before analysis
+  const filteredChanges = filterVersionChanges(combined);
+
   // Determine change type (helm vs app)
-  const detectedChangeType = detectChangeType(combined);
+  const detectedChangeType = detectChangeType(filteredChanges);
   console.log(`Change type detected: ${detectedChangeType.type}`);
 
   // Add specific logging for Helm scripts
@@ -73,8 +76,8 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
     return;
   }
 
-  // Analyze with OpenAI
-  const versionType = await analyzeWithOpenAI(combined, options);
+  // Analyze with OpenAI (use filtered changes to exclude version bumps)
+  const versionType = await analyzeWithOpenAI(filteredChanges, options);
 
   console.log(`Recommended version bump: ${versionType}`);
 
@@ -336,6 +339,58 @@ async function getChanges(options: AnalyzeOptions): Promise<{ staged: string; un
   return { staged, unstaged, combined };
 }
 
+function filterVersionChanges(diff: string): string {
+  // Filter out version-only changes from package.json and helm/Chart.yaml
+  // This prevents previous version bumps from influencing the AI analysis
+
+  const lines = diff.split('\n');
+  const filteredLines: string[] = [];
+  let skipNextLines = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip lines if we're in a version-only change section
+    if (skipNextLines > 0) {
+      skipNextLines--;
+      continue;
+    }
+
+    // Check if this is a package.json or Chart.yaml version change
+    // Look for patterns like:
+    // -  "version": "1.0.7",
+    // +  "version": "2.0.0",
+    // or
+    // -appVersion: 1.0.7
+    // +appVersion: 2.0.0
+    // or
+    // -version: 0.1.0
+    // +version: 0.1.1
+
+    const isPackageJsonVersionLine = /^[-+]\s*"version":\s*"[\d.]+",?\s*$/.test(line);
+    const isHelmVersionLine = /^[-+](app)?[Vv]ersion:\s*[\d.]+\s*$/.test(line);
+
+    if (isPackageJsonVersionLine || isHelmVersionLine) {
+      // Check if the next line is also a version change (the + after -)
+      const nextLine = lines[i + 1];
+      if (nextLine) {
+        const nextIsPackageJsonVersion = /^[-+]\s*"version":\s*"[\d.]+",?\s*$/.test(nextLine);
+        const nextIsHelmVersion = /^[-+](app)?[Vv]ersion:\s*[\d.]+\s*$/.test(nextLine);
+
+        if (nextIsPackageJsonVersion || nextIsHelmVersion) {
+          // This is a version change pair, skip both lines
+          skipNextLines = 1;
+          continue;
+        }
+      }
+    }
+
+    filteredLines.push(line);
+  }
+
+  return filteredLines.join('\n');
+}
+
 function detectChangeType(changes: string): ChangeType {
   // If no changes after filtering, return none
   if (!changes.trim()) {
@@ -355,23 +410,42 @@ function detectChangeType(changes: string): ChangeType {
   // File extensions that are considered Helm scripts
   const helmScriptExtensions = ['.sh', '.bash', '.py', '.js', '.ts', '.rb', '.pl', '.ps1', '.bat', '.cmd'];
 
+  // Track which file we're currently processing
+  let currentFile = '';
+
   for (const line of lines) {
-    // Skip diff metadata lines
-    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('@@') || line.trim() === '') {
+    // Check for diff --git headers to track current file
+    if (line.startsWith('diff --git')) {
+      // Extract file path from "diff --git a/path/to/file b/path/to/file"
+      const match = line.match(/diff --git a\/(.+?) b\//);
+      if (match) {
+        currentFile = match[1];
+      }
       continue;
     }
 
-    // Check for helm directory changes (excluding Chart.yaml which is handled separately)
-    if (line.includes('helm/') && !line.includes('helm/Chart.yaml')) {
+    // Skip other diff metadata lines
+    if (line.startsWith('---') ||
+      line.startsWith('+++') ||
+      line.startsWith('@@') ||
+      line.startsWith('index ') ||
+      line.startsWith('new file mode') ||
+      line.startsWith('deleted file mode') ||
+      line.trim() === '') {
+      continue;
+    }
+
+    // Check if current file is helm-related (excluding Chart.yaml)
+    const isHelmRelated = currentFile.startsWith('helm/') && !currentFile.includes('Chart.yaml');
+
+    if (isHelmRelated) {
       helmChanges = true;
 
       // Check if this is a Helm script file
       const isHelmScript = helmScriptExtensions.some(ext =>
-        line.includes(`helm/`) && (
-          line.includes(ext) ||
-          line.includes(`scripts/`) ||
-          line.includes(`hooks/`)
-        )
+        currentFile.includes(ext) ||
+        currentFile.includes('scripts/') ||
+        currentFile.includes('hooks/')
       );
 
       if (isHelmScript) {
@@ -383,7 +457,7 @@ function detectChangeType(changes: string): ChangeType {
     }
     // Check for app changes (everything except helm directory)
     // If no package.json exists, treat all non-helm changes as helm-only since there's no JavaScript app
-    else if (!line.includes('helm/')) {
+    else if (currentFile && !isHelmRelated) {
       if (packageJsonExists) {
         appChanges = true;
       } else {
@@ -497,16 +571,21 @@ A major version bump is required ONLY when changes would break existing code, co
 - Changing external service interfaces or protocols
 
 **CONFIGURATION BREAKING CHANGES:**
-- Removing required configuration options
+- Removing required configuration options that have no default values
 - Changing configuration format in ways that break existing configs
-- Changing environment variable names that break existing deployments
 - Changing required CLI command arguments or their behavior
 - Changing output formats that break existing parsers
 
 **DEPLOYMENT BREAKING CHANGES:**
-- Changes that would cause existing deployments to fail
-- Removing required environment variables
+- Changes that would cause existing deployments to fail without manual intervention
+- Removing required environment variables that have no fallback
 - Changing required service dependencies or interfaces
+- Renaming or removing required Helm values that would break existing deployments
+
+**IMPORTANT: Moving or reorganizing Helm values is NOT a breaking change if:**
+- The values have default values (empty strings, null, or other defaults)
+- The change is internal refactoring of the values structure
+- Example: Moving env.apiKey to secrets.apiKey with default empty string is PATCH, not MAJOR
 
 ## MINOR VERSION (0.X.0) - NEW FEATURES (BACKWARDS COMPATIBLE)
 A minor version bump is for adding new functionality that doesn't break existing usage:
@@ -546,9 +625,13 @@ A patch version bump is for all other changes that don't add new features or bre
 - Configuration cleanup or optimization
 - Environment-specific configuration adjustments
 - Changing port numbers, service configurations, or deployment settings
-- Renaming environment variables that don't break existing deployments
 - Updating Helm chart values (ports, resource limits, scaling settings)
 - Changing default values without breaking existing configs
+- Refactoring Helm templates or reorganizing Helm values structure
+- Moving configuration between Helm values sections (e.g., from env to secrets) when values have defaults
+- Removing fields from Helm values if they have default empty values (e.g., removing openaiApiKey with empty string from env)
+- Internal Helm template changes that don't change the deployed resources
+- Reorganizing where optional configuration values are defined
 
 ## DECISION FRAMEWORK
 
@@ -565,9 +648,12 @@ A patch version bump is for all other changes that don't add new features or bre
 1. **MAJOR is ONLY for breaking changes** - If existing code/deployments would fail, it's MAJOR
 2. **Everything else is MINOR or PATCH** - There is no "undefined" category
 3. **When in doubt, choose the lower version** - Prefer PATCH over MINOR, MINOR over MAJOR
-4. **Configuration changes are almost always PATCH** unless they break existing deployments
-5. **Adding new options/features is MINOR** - Even if they're significant additions
-6. **Bug fixes are PATCH** - Even if they're important security fixes
+4. **Helm configuration changes are almost always PATCH** unless they break existing deployments
+5. **Helm template refactoring is PATCH** - Reorganizing Helm values or templates is PATCH
+6. **Removing optional Helm values with defaults is PATCH** - If a field has a default value like "", removing it is PATCH
+7. **Moving values between Helm sections is PATCH** - Moving from env to secrets is refactoring, not breaking
+8. **Adding new options/features is MINOR** - Even if they're significant additions
+9. **Bug fixes are PATCH** - Even if they're important security fixes
 
 ## EXAMPLES
 
@@ -596,6 +682,8 @@ A patch version bump is for all other changes that don't add new features or bre
 - Internal refactoring
 - Changing internal function signatures
 - Removing unused internal functions
+- Refactoring Helm templates or values structure
+- Moving values between Helm sections (env to secrets, etc.)
 
 Git diff:
 ${changes}
@@ -706,7 +794,7 @@ async function syncHelmAppVersion(): Promise<void> {
 
   // Read the updated version from package.json
   const packageJsonPath = join(process.cwd(), 'package.json');
-  
+
   if (!existsSync(packageJsonPath)) {
     console.log('package.json not found. Skipping appVersion sync.');
     return;
