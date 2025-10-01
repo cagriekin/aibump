@@ -847,6 +847,53 @@ async function updatePackageLockVersion(): Promise<void> {
   }
 }
 
+export function filterLargeFilesFromDiff(diff: string): string {
+  const lines = diff.split('\n');
+  const filteredLines: string[] = [];
+  let skipFile = false;
+  let currentFile = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Check if this is a file header line (diff --git a/file b/file)
+    if (line.startsWith('diff --git')) {
+      const fileMatch = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+      if (fileMatch) {
+        currentFile = fileMatch[1];
+        
+        // Check if this file should be excluded
+        const shouldExclude = EXCLUDED_FILES.some(excluded =>
+          currentFile.includes(excluded) ||
+          (excluded.includes('*') && currentFile.match(excluded.replace('*', '.*')))
+        );
+        
+        if (shouldExclude) {
+          skipFile = true;
+          // Add a summary line instead of the full diff
+          filteredLines.push(`diff --git a/${currentFile} b/${currentFile}`);
+          filteredLines.push(`index 0000000..0000000 100644`);
+          filteredLines.push(`--- a/${currentFile}`);
+          filteredLines.push(`+++ b/${currentFile}`);
+          filteredLines.push(`@@ -0,0 +1,0 @@`);
+          filteredLines.push(`+[${currentFile} changed - content excluded from commit message]`);
+          filteredLines.push('');
+          continue;
+        } else {
+          skipFile = false;
+        }
+      }
+    }
+    
+    // If we're not skipping this file, add the line
+    if (!skipFile) {
+      filteredLines.push(line);
+    }
+  }
+  
+  return filteredLines.join('\n');
+}
+
 async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<void> {
   try {
     const git = simpleGit();
@@ -871,8 +918,16 @@ async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<
       return;
     }
 
-    // Generate commit message using OpenAI
-    const commitMessage = await generateCommitMessage(diff, options);
+    // Filter out large files from diff for commit message generation
+    const filteredDiff = filterLargeFilesFromDiff(diff);
+    
+    // Log if any large files were filtered out
+    if (filteredDiff !== diff) {
+      console.log('Note: Large files (like package-lock.json) are excluded from commit message generation to avoid token limits.');
+    }
+
+    // Generate commit message using OpenAI with filtered diff
+    const commitMessage = await generateCommitMessage(filteredDiff, options);
 
     // Commit with the generated message
     await git.commit(commitMessage);
