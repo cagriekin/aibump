@@ -44,11 +44,16 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   const { staged, unstaged, combined } = await getChanges(options);
 
   if (!combined.trim()) {
-    console.log(`No relevant ${changeType} changes found. Large files like package-lock.json are excluded from analysis.`);
+    console.log(
+      `No relevant ${changeType} changes found. Large files like package-lock.json are excluded from analysis.`
+    );
     return;
   }
 
-  console.log(`Found relevant ${changeType} changes (large files excluded):\n`, combined);
+  console.log(
+    `Found relevant ${changeType} changes (large files excluded):\n`,
+    combined
+  );
 
   // Filter out version-only changes before analysis
   const filteredChanges = filterVersionChanges(combined);
@@ -59,15 +64,25 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
 
   // Add specific logging for Helm scripts
   if (detectedChangeType.type === 'helm-only') {
-    const hasHelmScripts = combined.includes('helm/') && (
-      combined.includes('.sh') || combined.includes('.bash') || combined.includes('.py') ||
-      combined.includes('.js') || combined.includes('.ts') || combined.includes('.rb') ||
-      combined.includes('.pl') || combined.includes('.ps1') || combined.includes('.bat') ||
-      combined.includes('.cmd') || combined.includes('scripts/') || combined.includes('hooks/')
-    );
+    const hasHelmScripts =
+      combined.includes('helm/') &&
+      (combined.includes('.sh') ||
+        combined.includes('.bash') ||
+        combined.includes('.py') ||
+        combined.includes('.js') ||
+        combined.includes('.ts') ||
+        combined.includes('.rb') ||
+        combined.includes('.pl') ||
+        combined.includes('.ps1') ||
+        combined.includes('.bat') ||
+        combined.includes('.cmd') ||
+        combined.includes('scripts/') ||
+        combined.includes('hooks/'));
 
     if (hasHelmScripts) {
-      console.log('Note: Only Helm scripts detected - package.json version will not be bumped');
+      console.log(
+        'Note: Only Helm scripts detected - package.json version will not be bumped'
+      );
     }
   }
 
@@ -84,12 +99,19 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   if (options.dryRun) {
     if (detectedChangeType.type === 'helm-only') {
       console.log(`Would bump Helm chart version: ${versionType}`);
-    } else if (detectedChangeType.type === 'app-only' || detectedChangeType.type === 'both') {
+    } else if (
+      detectedChangeType.type === 'app-only' ||
+      detectedChangeType.type === 'both'
+    ) {
       const packageJsonPath = join(process.cwd(), 'package.json');
       if (existsSync(packageJsonPath)) {
-        console.log(`Would run: npm version ${versionType} and update Helm appVersion`);
+        console.log(
+          `Would run: npm version ${versionType} and update Helm appVersion`
+        );
       } else {
-        console.log(`Would bump Helm chart version: ${versionType} (no package.json found)`);
+        console.log(
+          `Would bump Helm chart version: ${versionType} (no package.json found)`
+        );
       }
     }
     return;
@@ -117,7 +139,9 @@ async function validateEnvironment(): Promise<void> {
     const git = simpleGit();
     await git.status();
   } catch (error) {
-    throw new Error('Not in a git repository. Please run this command from a git repository.');
+    throw new Error(
+      'Not in a git repository. Please run this command from a git repository.'
+    );
   }
 
   // Check if package.json exists
@@ -130,7 +154,9 @@ async function validateEnvironment(): Promise<void> {
 
   // At least one of package.json or Helm Chart.yaml must exist
   if (!packageJsonExists && !helmChartExists) {
-    throw new Error('Neither package.json nor Helm Chart.yaml found. Please run this command from a project directory with either npm package or Helm chart.');
+    throw new Error(
+      'Neither package.json nor Helm Chart.yaml found. Please run this command from a project directory with either npm package or Helm chart.'
+    );
   }
 
   // Validate package.json content if it exists
@@ -156,7 +182,9 @@ async function validateEnvironment(): Promise<void> {
         throw new Error('Helm Chart.yaml does not contain a version field.');
       }
     } catch (error) {
-      throw new Error(`Helm Chart.yaml validation failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Helm Chart.yaml validation failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 }
@@ -174,7 +202,7 @@ const EXCLUDED_FILES = [
   '.nyc_output/',
   '*.log',
   '*.min.js',
-  '*.min.css'
+  '*.min.css',
 ];
 
 async function getStagedChanges(): Promise<string> {
@@ -191,21 +219,26 @@ async function getStagedChanges(): Promise<string> {
 
     // Filter out excluded files
     const excludedFiles = stagedFiles.filter(file =>
-      EXCLUDED_FILES.some(excluded =>
-        file.includes(excluded) ||
-        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+      EXCLUDED_FILES.some(
+        excluded =>
+          file.includes(excluded) ||
+          (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
       )
     );
 
-    const relevantFiles = stagedFiles.filter(file =>
-      !EXCLUDED_FILES.some(excluded =>
-        file.includes(excluded) ||
-        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
-      )
+    const relevantFiles = stagedFiles.filter(
+      file =>
+        !EXCLUDED_FILES.some(
+          excluded =>
+            file.includes(excluded) ||
+            (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+        )
     );
 
     if (excludedFiles.length > 0) {
-      console.log(`Excluding large staged files from analysis: ${excludedFiles.join(', ')}`);
+      console.log(
+        `Excluding large staged files from analysis: ${excludedFiles.join(', ')}`
+      );
     }
 
     if (relevantFiles.length === 0) {
@@ -215,7 +248,9 @@ async function getStagedChanges(): Promise<string> {
     // Get diff for staged files
     return await git.diff(['--cached', ...relevantFiles]);
   } catch (error) {
-    throw new Error(`Failed to get staged git diff: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to get staged git diff: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -230,26 +265,31 @@ async function getUnstagedChanges(): Promise<string> {
       ...status.created,
       ...status.deleted,
       ...status.not_added, // Include untracked files
-      ...status.renamed.map(r => r.to)
+      ...status.renamed.map(r => r.to),
     ];
 
     // Filter out excluded files
     const excludedFiles = changedFiles.filter(file =>
-      EXCLUDED_FILES.some(excluded =>
-        file.includes(excluded) ||
-        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+      EXCLUDED_FILES.some(
+        excluded =>
+          file.includes(excluded) ||
+          (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
       )
     );
 
-    const relevantFiles = changedFiles.filter(file =>
-      !EXCLUDED_FILES.some(excluded =>
-        file.includes(excluded) ||
-        (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
-      )
+    const relevantFiles = changedFiles.filter(
+      file =>
+        !EXCLUDED_FILES.some(
+          excluded =>
+            file.includes(excluded) ||
+            (excluded.includes('*') && file.match(excluded.replace('*', '.*')))
+        )
     );
 
     if (excludedFiles.length > 0) {
-      console.log(`Excluding large files from analysis: ${excludedFiles.join(', ')}`);
+      console.log(
+        `Excluding large files from analysis: ${excludedFiles.join(', ')}`
+      );
     }
 
     if (relevantFiles.length === 0) {
@@ -257,16 +297,16 @@ async function getUnstagedChanges(): Promise<string> {
     }
 
     // Separate modified/deleted files from newly created files
-    const modifiedFiles = relevantFiles.filter(file =>
-      status.modified.includes(file) ||
-      status.renamed.some(r => r.to === file)
+    const modifiedFiles = relevantFiles.filter(
+      file =>
+        status.modified.includes(file) ||
+        status.renamed.some(r => r.to === file)
     );
     const deletedFiles = relevantFiles.filter(file =>
       status.deleted.includes(file)
     );
-    const newFiles = relevantFiles.filter(file =>
-      status.created.includes(file) ||
-      status.not_added.includes(file)
+    const newFiles = relevantFiles.filter(
+      file => status.created.includes(file) || status.not_added.includes(file)
     );
 
     let diff = '';
@@ -286,7 +326,9 @@ async function getUnstagedChanges(): Promise<string> {
           try {
             diff += await git.diff(['--', file]);
           } catch (fileError) {
-            console.warn(`Warning: Could not get diff for deleted file ${file}: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+            console.warn(
+              `Warning: Could not get diff for deleted file ${file}: ${fileError instanceof Error ? fileError.message : String(fileError)}`
+            );
           }
         }
       }
@@ -313,19 +355,35 @@ async function getUnstagedChanges(): Promise<string> {
         }
         diff += '\n';
       } catch (error) {
-        console.warn(`Warning: Could not read content of new file ${file}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(
+          `Warning: Could not read content of new file ${file}: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
 
     return diff;
   } catch (error) {
-    throw new Error(`Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
-async function getChanges(options: AnalyzeOptions): Promise<{ staged: string; unstaged: string; combined: string }> {
-  const staged = options.staged || options.both || (!options.staged && !options.unstaged && !options.both) ? await getStagedChanges() : '';
-  const unstaged = options.unstaged || options.both || (!options.staged && !options.unstaged && !options.both) ? await getUnstagedChanges() : '';
+async function getChanges(
+  options: AnalyzeOptions
+): Promise<{ staged: string; unstaged: string; combined: string }> {
+  const staged =
+    options.staged ||
+    options.both ||
+    (!options.staged && !options.unstaged && !options.both)
+      ? await getStagedChanges()
+      : '';
+  const unstaged =
+    options.unstaged ||
+    options.both ||
+    (!options.staged && !options.unstaged && !options.both)
+      ? await getUnstagedChanges()
+      : '';
 
   let combined = '';
   if (staged && unstaged) {
@@ -367,15 +425,20 @@ function filterVersionChanges(diff: string): string {
     // -version: 0.1.0
     // +version: 0.1.1
 
-    const isPackageJsonVersionLine = /^[-+]\s*"version":\s*"[\d.]+",?\s*$/.test(line);
+    const isPackageJsonVersionLine = /^[-+]\s*"version":\s*"[\d.]+",?\s*$/.test(
+      line
+    );
     const isHelmVersionLine = /^[-+](app)?[Vv]ersion:\s*[\d.]+\s*$/.test(line);
 
     if (isPackageJsonVersionLine || isHelmVersionLine) {
       // Check if the next line is also a version change (the + after -)
       const nextLine = lines[i + 1];
       if (nextLine) {
-        const nextIsPackageJsonVersion = /^[-+]\s*"version":\s*"[\d.]+",?\s*$/.test(nextLine);
-        const nextIsHelmVersion = /^[-+](app)?[Vv]ersion:\s*[\d.]+\s*$/.test(nextLine);
+        const nextIsPackageJsonVersion =
+          /^[-+]\s*"version":\s*"[\d.]+",?\s*$/.test(nextLine);
+        const nextIsHelmVersion = /^[-+](app)?[Vv]ersion:\s*[\d.]+\s*$/.test(
+          nextLine
+        );
 
         if (nextIsPackageJsonVersion || nextIsHelmVersion) {
           // This is a version change pair, skip both lines
@@ -408,7 +471,18 @@ function detectChangeType(changes: string): ChangeType {
   const packageJsonExists = existsSync(packageJsonPath);
 
   // File extensions that are considered Helm scripts
-  const helmScriptExtensions = ['.sh', '.bash', '.py', '.js', '.ts', '.rb', '.pl', '.ps1', '.bat', '.cmd'];
+  const helmScriptExtensions = [
+    '.sh',
+    '.bash',
+    '.py',
+    '.js',
+    '.ts',
+    '.rb',
+    '.pl',
+    '.ps1',
+    '.bat',
+    '.cmd',
+  ];
 
   // Track which file we're currently processing
   let currentFile = '';
@@ -425,27 +499,31 @@ function detectChangeType(changes: string): ChangeType {
     }
 
     // Skip other diff metadata lines
-    if (line.startsWith('---') ||
+    if (
+      line.startsWith('---') ||
       line.startsWith('+++') ||
       line.startsWith('@@') ||
       line.startsWith('index ') ||
       line.startsWith('new file mode') ||
       line.startsWith('deleted file mode') ||
-      line.trim() === '') {
+      line.trim() === ''
+    ) {
       continue;
     }
 
     // Check if current file is helm-related (excluding Chart.yaml)
-    const isHelmRelated = currentFile.startsWith('helm/') && !currentFile.includes('Chart.yaml');
+    const isHelmRelated =
+      currentFile.startsWith('helm/') && !currentFile.includes('Chart.yaml');
 
     if (isHelmRelated) {
       helmChanges = true;
 
       // Check if this is a Helm script file
-      const isHelmScript = helmScriptExtensions.some(ext =>
-        currentFile.includes(ext) ||
-        currentFile.includes('scripts/') ||
-        currentFile.includes('hooks/')
+      const isHelmScript = helmScriptExtensions.some(
+        ext =>
+          currentFile.includes(ext) ||
+          currentFile.includes('scripts/') ||
+          currentFile.includes('hooks/')
       );
 
       if (isHelmScript) {
@@ -479,7 +557,12 @@ function detectChangeType(changes: string): ChangeType {
   }
 
   // If only Helm scripts changed (no other helm changes, no app changes), treat as helm-only
-  if (helmChanges && helmScriptChanges && !helmNonScriptChanges && !appChanges) {
+  if (
+    helmChanges &&
+    helmScriptChanges &&
+    !helmNonScriptChanges &&
+    !appChanges
+  ) {
     return { type: 'helm-only', helmChanges: true, appChanges: false };
   }
 
@@ -509,7 +592,9 @@ function readHelmChart(): HelmChart | null {
     const content = readFileSync(chartPath, 'utf-8');
     return yaml.load(content) as HelmChart;
   } catch (error) {
-    throw new Error(`Failed to read Helm Chart.yaml: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to read Helm Chart.yaml: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -520,15 +605,20 @@ function writeHelmChart(chart: HelmChart): void {
     const content = yaml.dump(chart, {
       lineWidth: -1,
       noRefs: true,
-      sortKeys: false
+      sortKeys: false,
     });
     writeFileSync(chartPath, content);
   } catch (error) {
-    throw new Error(`Failed to write Helm Chart.yaml: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to write Helm Chart.yaml: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
-function bumpVersion(version: string, type: 'major' | 'minor' | 'patch'): string {
+function bumpVersion(
+  version: string,
+  type: 'major' | 'minor' | 'patch'
+): string {
   const parts = version.split('.').map(Number);
 
   if (parts.length !== 3 || parts.some(isNaN)) {
@@ -547,7 +637,10 @@ function bumpVersion(version: string, type: 'major' | 'minor' | 'patch'): string
   }
 }
 
-async function analyzeWithOpenAI(changes: string, options: AnalyzeOptions): Promise<'major' | 'minor' | 'patch'> {
+async function analyzeWithOpenAI(
+  changes: string,
+  options: AnalyzeOptions
+): Promise<'major' | 'minor' | 'patch'> {
   // Ensure we have an API key via config file, seeding from CLI option if provided
   const apiKey = await ensureAndGetOpenAIKey(options.apiKey);
 
@@ -698,7 +791,9 @@ Respond with only one word: "major", "minor", or "patch".`;
       temperature: 0,
     });
 
-    const response = completion.choices[0]?.message?.content?.trim().toLowerCase();
+    const response = completion.choices[0]?.message?.content
+      ?.trim()
+      .toLowerCase();
 
     if (!response || !['major', 'minor', 'patch'].includes(response)) {
       throw new Error(`Invalid response from OpenAI: ${response}`);
@@ -706,11 +801,16 @@ Respond with only one word: "major", "minor", or "patch".`;
 
     return response as 'major' | 'minor' | 'patch';
   } catch (error) {
-    throw new Error(`OpenAI API error: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
-async function executeVersionBump(versionType: 'major' | 'minor' | 'patch', changeType: ChangeType): Promise<void> {
+async function executeVersionBump(
+  versionType: 'major' | 'minor' | 'patch',
+  changeType: ChangeType
+): Promise<void> {
   try {
     // Note: We intentionally don't check for clean working directory here
     // because we want to analyze and version based on unstaged changes
@@ -733,15 +833,21 @@ async function executeVersionBump(versionType: 'major' | 'minor' | 'patch', chan
 
     console.log('Version bump completed successfully.');
   } catch (error) {
-    throw new Error(`Failed to execute version bump: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to execute version bump: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
-async function bumpHelmChartVersion(versionType: 'major' | 'minor' | 'patch'): Promise<void> {
+async function bumpHelmChartVersion(
+  versionType: 'major' | 'minor' | 'patch'
+): Promise<void> {
   const chart = readHelmChart();
 
   if (!chart) {
-    throw new Error('Helm Chart.yaml not found. Cannot bump Helm chart version.');
+    throw new Error(
+      'Helm Chart.yaml not found. Cannot bump Helm chart version.'
+    );
   }
 
   if (!chart.version) {
@@ -755,7 +861,9 @@ async function bumpHelmChartVersion(versionType: 'major' | 'minor' | 'patch'): P
   console.log(`Updated Helm chart version to ${newVersion}`);
 }
 
-async function bumpNpmVersion(versionType: 'major' | 'minor' | 'patch'): Promise<void> {
+async function bumpNpmVersion(
+  versionType: 'major' | 'minor' | 'patch'
+): Promise<void> {
   const packageJsonPath = join(process.cwd(), 'package.json');
 
   try {
@@ -769,7 +877,9 @@ async function bumpNpmVersion(versionType: 'major' | 'minor' | 'patch'): Promise
 
     // Calculate new version
     const newVersion = bumpVersion(packageJson.version, versionType);
-    console.log(`Bumping npm version from ${packageJson.version} to ${newVersion}`);
+    console.log(
+      `Bumping npm version from ${packageJson.version} to ${newVersion}`
+    );
 
     // Update package.json
     packageJson.version = newVersion;
@@ -780,7 +890,9 @@ async function bumpNpmVersion(versionType: 'major' | 'minor' | 'patch'): Promise
     // Update package-lock.json with the new version
     await updatePackageLockVersion();
   } catch (error) {
-    throw new Error(`Failed to bump npm version: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to bump npm version: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -821,7 +933,9 @@ async function updatePackageLockVersion(): Promise<void> {
 
     // Check if package-lock.json exists
     if (!existsSync(packageLockPath)) {
-      console.log('package-lock.json not found. Skipping package-lock.json update.');
+      console.log(
+        'package-lock.json not found. Skipping package-lock.json update.'
+      );
       return;
     }
 
@@ -843,7 +957,10 @@ async function updatePackageLockVersion(): Promise<void> {
     console.log(`Updated package-lock.json version to ${newVersion}`);
   } catch (error) {
     // If package-lock.json doesn't exist or can't be updated, that's okay
-    console.log('Warning: Could not update package-lock.json version:', error instanceof Error ? error.message : String(error));
+    console.log(
+      'Warning: Could not update package-lock.json version:',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 }
 
@@ -855,19 +972,21 @@ export function filterLargeFilesFromDiff(diff: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    
+
     // Check if this is a file header line (diff --git a/file b/file)
     if (line.startsWith('diff --git')) {
       const fileMatch = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
       if (fileMatch) {
         currentFile = fileMatch[1];
-        
+
         // Check if this file should be excluded
-        const shouldExclude = EXCLUDED_FILES.some(excluded =>
-          currentFile.includes(excluded) ||
-          (excluded.includes('*') && currentFile.match(excluded.replace('*', '.*')))
+        const shouldExclude = EXCLUDED_FILES.some(
+          excluded =>
+            currentFile.includes(excluded) ||
+            (excluded.includes('*') &&
+              currentFile.match(excluded.replace('*', '.*')))
         );
-        
+
         if (shouldExclude) {
           skipFile = true;
           // Add a summary line instead of the full diff
@@ -876,7 +995,9 @@ export function filterLargeFilesFromDiff(diff: string): string {
           filteredLines.push(`--- a/${currentFile}`);
           filteredLines.push(`+++ b/${currentFile}`);
           filteredLines.push(`@@ -0,0 +1,0 @@`);
-          filteredLines.push(`+[${currentFile} changed - content excluded from commit message]`);
+          filteredLines.push(
+            `+[${currentFile} changed - content excluded from commit message]`
+          );
           filteredLines.push('');
           continue;
         } else {
@@ -884,17 +1005,19 @@ export function filterLargeFilesFromDiff(diff: string): string {
         }
       }
     }
-    
+
     // If we're not skipping this file, add the line
     if (!skipFile) {
       filteredLines.push(line);
     }
   }
-  
+
   return filteredLines.join('\n');
 }
 
-async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<void> {
+async function generateCommitMessageAndCommit(
+  options: AnalyzeOptions
+): Promise<void> {
   try {
     const git = simpleGit();
 
@@ -907,7 +1030,10 @@ async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<
       // Stage unstaged changes and commit them
       await git.add('.');
       diff = await git.diff(['--cached']);
-    } else if (options.both || (!options.staged && !options.unstaged && !options.both)) {
+    } else if (
+      options.both ||
+      (!options.staged && !options.unstaged && !options.both)
+    ) {
       // Stage all changes (both staged and unstaged) and commit
       await git.add('.');
       diff = await git.diff(['--cached']);
@@ -920,10 +1046,12 @@ async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<
 
     // Filter out large files from diff for commit message generation
     const filteredDiff = filterLargeFilesFromDiff(diff);
-    
+
     // Log if any large files were filtered out
     if (filteredDiff !== diff) {
-      console.log('Note: Large files (like package-lock.json) are excluded from commit message generation to avoid token limits.');
+      console.log(
+        'Note: Large files (like package-lock.json) are excluded from commit message generation to avoid token limits.'
+      );
     }
 
     // Generate commit message using OpenAI with filtered diff
@@ -934,11 +1062,16 @@ async function generateCommitMessageAndCommit(options: AnalyzeOptions): Promise<
 
     console.log(`Committed changes with message: ${commitMessage}`);
   } catch (error) {
-    throw new Error(`Failed to commit changes: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to commit changes: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
-async function generateCommitMessage(diff: string, options: AnalyzeOptions): Promise<string> {
+async function generateCommitMessage(
+  diff: string,
+  options: AnalyzeOptions
+): Promise<string> {
   // Ensure we have an API key via config file, seeding from CLI option if provided
   const apiKey = await ensureAndGetOpenAIKey(options.apiKey);
 
@@ -998,6 +1131,8 @@ Respond with only the commit message in the specified format, no additional text
 
     return cleanMessage;
   } catch (error) {
-    throw new Error(`OpenAI API error: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }

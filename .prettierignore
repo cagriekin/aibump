@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Package files
+package-lock.json
+
+# IDE files
+*.iml
+
+# Test files
+test-package.json

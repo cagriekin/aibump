@@ -24,9 +24,10 @@ function parseKeyFromConfig(content: string): string | null {
 }
 
 async function promptForApiKey(): Promise<string> {
-  const question = 'Enter your OpenAI API key (will be saved to ~/.config/aibump): ';
+  const question =
+    'Enter your OpenAI API key (will be saved to ~/.config/aibump): ';
 
-  return new Promise<string>((resolve) => {
+  return new Promise<string>(resolve => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -43,7 +44,7 @@ async function promptForApiKey(): Promise<string> {
       }
     };
 
-    rl.question(question, (answer) => {
+    rl.question(question, answer => {
       (rl as any)._writeToOutput = originalWrite;
       rl.close();
       resolve(answer.trim());
@@ -51,7 +52,9 @@ async function promptForApiKey(): Promise<string> {
   });
 }
 
-export async function ensureAndGetOpenAIKey(initialFromCli?: string): Promise<string> {
+export async function ensureAndGetOpenAIKey(
+  initialFromCli?: string
+): Promise<string> {
   // If config file exists, read and return the key
   if (existsSync(CONFIG_PATH)) {
     const content = readFileSync(CONFIG_PATH, 'utf-8');
@@ -65,7 +68,8 @@ export async function ensureAndGetOpenAIKey(initialFromCli?: string): Promise<st
   }
 
   // Prefer CLI-provided key if given; otherwise prompt
-  const key = (initialFromCli && initialFromCli.trim()) || (await promptForApiKey());
+  const key =
+    (initialFromCli && initialFromCli.trim()) || (await promptForApiKey());
 
   if (!key) {
     throw new Error('OpenAI API key is required.');

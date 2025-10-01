@@ -50,6 +50,7 @@ aibump
 ## Commit Message Format
 
 The tool generates structured commit messages with:
+
 - A conventional commit header: `type(scope): brief summary`
 - A bullet list highlighting the most important changes
 - Focus on what changed and its impact
@@ -63,6 +64,7 @@ aibump
 ```
 
 Output:
+
 ```
 Found unstaged changes:
 diff --git a/src/index.js b/src/index.js
