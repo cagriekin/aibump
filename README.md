@@ -27,6 +27,10 @@ aibump
 - `-m, --model <model>`: OpenAI model to use (default: gpt-4)
 - `--dry-run`: Show what would be done without making changes
 - `--no-commit`: Skip generating commit message and committing changes (commit is enabled by default)
+- `--staged`: Analyze only staged changes
+- `--unstaged`: Analyze only unstaged changes
+- `--both`: Analyze both staged and unstaged changes (default behavior)
+- `--last-commits <number>`: Analyze the last N commits instead of working directory changes
 
 ## Prerequisites
 
@@ -80,6 +84,52 @@ Committed changes with message: feat: add new feature logging
 - Add console logging for new feature
 - Update version to 1.1.0
 - Sync Helm chart appVersion
+```
+
+## Analyzing Historical Commits
+
+You can analyze the last N commits instead of working directory changes using the `--last-commits` option:
+
+```bash
+aibump --last-commits 5
+```
+
+This is useful for:
+- **Retrospective versioning**: Bump version based on already-committed work
+- **Release preparation**: Analyze what changed since last release
+- **CI/CD pipelines**: Automatically determine version bump based on merged commits
+
+When using `--last-commits`:
+- The tool analyzes changes introduced by the last N commits (using `git diff HEAD~N HEAD`)
+- It determines the appropriate version bump based on those changes
+- It commits the version bump with a message like: `chore: bump version to minor based on last 5 commit(s)`
+- You **cannot** combine it with `--staged`, `--unstaged`, or `--both` options
+
+### Example
+
+```bash
+# Analyze last 3 commits and bump version
+aibump --last-commits 3
+
+# Dry run to see what would happen
+aibump --last-commits 10 --dry-run
+```
+
+Output:
+```
+Analyzing changes from the last 3 commit(s)...
+Found relevant changes in the last 3 commit(s) (large files excluded)
+Change type detected: app-only
+Recommended version bump: minor
+Bumping npm version from 1.0.0 to 1.1.0
+Updated package.json version to 1.1.0
+Updated package-lock.json version to 1.1.0
+Updated Helm chart appVersion to 1.1.0
+Version bump completed successfully.
+
+Committing version bump changes...
+Successfully committed version bump with message:
+"chore: bump version to minor based on last 3 commit(s)"
 ```
 
 ## Helm Chart Support

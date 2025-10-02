@@ -37,6 +37,10 @@ program
     '--both',
     'Analyze both staged and unstaged changes (default behavior)'
   )
+  .option(
+    '--last-commits <number>',
+    'Analyze the last N commits instead of working directory changes'
+  )
   .action(async options => {
     try {
       // Handle --version option

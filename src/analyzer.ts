@@ -15,6 +15,7 @@ export interface AnalyzeOptions {
   staged?: boolean;
   unstaged?: boolean;
   both?: boolean;
+  lastCommits?: string;
 }
 
 export interface ChangeType {
@@ -35,6 +36,18 @@ export interface HelmChart {
 export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   // Validate environment
   await validateEnvironment();
+
+  // Check if we're analyzing last commits instead of working directory
+  if (options.lastCommits) {
+    // Validate that conflicting options are not used
+    if (options.staged || options.unstaged || options.both) {
+      throw new Error(
+        '--last-commits cannot be used with --staged, --unstaged, or --both options'
+      );
+    }
+    await analyzeLastCommits(options);
+    return;
+  }
 
   // Determine what changes to analyze based on options
   const changeType = determineChangeType(options);
@@ -124,6 +137,78 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
   if (!options.noCommit && !options.dryRun) {
     await generateCommitMessageAndCommit(options);
   }
+}
+
+async function analyzeLastCommits(options: AnalyzeOptions): Promise<void> {
+  const numberOfCommits = parseInt(options.lastCommits || '1', 10);
+
+  if (isNaN(numberOfCommits) || numberOfCommits < 1) {
+    throw new Error(
+      `Invalid number of commits: ${options.lastCommits}. Must be a positive integer.`
+    );
+  }
+
+  console.log(`Analyzing changes from the last ${numberOfCommits} commit(s)...`);
+
+  // Get changes from last N commits
+  const changes = await getLastCommitsChanges(numberOfCommits);
+
+  if (!changes.trim()) {
+    console.log(
+      `No relevant changes found in the last ${numberOfCommits} commit(s). Large files like package-lock.json are excluded from analysis.`
+    );
+    return;
+  }
+
+  console.log(
+    `Found relevant changes in the last ${numberOfCommits} commit(s) (large files excluded)`
+  );
+
+  // Filter out version-only changes before analysis
+  const filteredChanges = filterVersionChanges(changes);
+
+  // Determine change type (helm vs app)
+  const detectedChangeType = detectChangeType(filteredChanges);
+  console.log(`Change type detected: ${detectedChangeType.type}`);
+
+  if (detectedChangeType.type === 'none') {
+    console.log('No relevant changes found. Nothing to version.');
+    return;
+  }
+
+  // Analyze with OpenAI (use filtered changes to exclude version bumps)
+  const versionType = await analyzeWithOpenAI(filteredChanges, options);
+
+  console.log(`Recommended version bump: ${versionType}`);
+
+  if (options.dryRun) {
+    if (detectedChangeType.type === 'helm-only') {
+      console.log(`Would bump Helm chart version: ${versionType}`);
+    } else if (
+      detectedChangeType.type === 'app-only' ||
+      detectedChangeType.type === 'both'
+    ) {
+      const packageJsonPath = join(process.cwd(), 'package.json');
+      if (existsSync(packageJsonPath)) {
+        console.log(
+          `Would run: npm version ${versionType} and update Helm appVersion`
+        );
+      } else {
+        console.log(
+          `Would bump Helm chart version: ${versionType} (no package.json found)`
+        );
+      }
+    }
+    console.log('Would commit the version bump changes.');
+    return;
+  }
+
+  // Execute appropriate version bump based on change type
+  await executeVersionBump(versionType, detectedChangeType);
+
+  // Always commit the version bump (don't respect noCommit flag in this mode)
+  console.log('\nCommitting version bump changes...');
+  await commitVersionBump(versionType, numberOfCommits, options);
 }
 
 function determineChangeType(options: AnalyzeOptions): string {
@@ -365,6 +450,60 @@ async function getUnstagedChanges(): Promise<string> {
   } catch (error) {
     throw new Error(
       `Failed to get git diff: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+async function getLastCommitsChanges(numberOfCommits: number): Promise<string> {
+  const git = simpleGit();
+
+  try {
+    // Get the combined diff of the last N commits
+    // This shows all changes introduced by those commits
+    const diff = await git.diff([`HEAD~${numberOfCommits}`, 'HEAD']);
+
+    if (!diff.trim()) {
+      return '';
+    }
+
+    // Filter out excluded files
+    const lines = diff.split('\n');
+    const filteredLines: string[] = [];
+    let currentFile = '';
+    let skipFile = false;
+
+    for (const line of lines) {
+      if (line.startsWith('diff --git')) {
+        const fileMatch = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+        if (fileMatch) {
+          currentFile = fileMatch[1];
+
+          // Check if this file should be excluded
+          const shouldExclude = EXCLUDED_FILES.some(
+            excluded =>
+              currentFile.includes(excluded) ||
+              (excluded.includes('*') &&
+                currentFile.match(excluded.replace('*', '.*')))
+          );
+
+          if (shouldExclude) {
+            skipFile = true;
+            console.log(`Excluding large file from analysis: ${currentFile}`);
+          } else {
+            skipFile = false;
+          }
+        }
+      }
+
+      if (!skipFile) {
+        filteredLines.push(line);
+      }
+    }
+
+    return filteredLines.join('\n');
+  } catch (error) {
+    throw new Error(
+      `Failed to get changes from last ${numberOfCommits} commits: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }
@@ -648,6 +787,14 @@ async function analyzeWithOpenAI(
     apiKey,
   });
 
+  // Truncate changes to ensure we stay within 8192 token limit
+  // Reserve ~2000 tokens for the prompt template itself
+  const truncatedChanges = truncateDiffForCommit(changes, 6000);
+  
+  // Create a hash of the input for debugging consistency
+  const inputHash = createHash('sha256').update(truncatedChanges).digest('hex').substring(0, 8);
+  console.log(`Analyzing changes (hash: ${inputHash})...`);
+
   const prompt = `Analyze the following git diff and determine what type of version bump is appropriate according to semantic versioning (semver).
 
 This is a CLI tool called "aibump" that analyzes git changes and automatically bumps npm and Helm versions using AI.
@@ -779,40 +926,54 @@ A patch version bump is for all other changes that don't add new features or bre
 - Moving values between Helm sections (env to secrets, etc.)
 
 Git diff:
-${changes}
+${truncatedChanges}
 
 Respond with only one word: "major", "minor", or "patch".`;
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: options.model || 'gpt-5-nano',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 10,
-      temperature: 0,
-    });
+  // Retry logic to ensure consistency
+  const maxRetries = 3;
+  let lastError: Error | null = null;
 
-    const rawResponse = completion.choices[0]?.message?.content?.trim();
-    
-    if (!rawResponse) {
-      throw new Error('No response from OpenAI');
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: options.model || 'gpt-5-nano',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 10,
+        temperature: 0,
+      });
+
+      const rawResponse = completion.choices[0]?.message?.content?.trim();
+      
+      if (!rawResponse) {
+        throw new Error('No response from OpenAI');
+      }
+
+      // Remove quotes and convert to lowercase
+      const response = rawResponse
+        .replace(/^["']|["']$/g, '') // Remove leading/trailing quotes
+        .trim()
+        .toLowerCase();
+
+      if (!['major', 'minor', 'patch'].includes(response)) {
+        throw new Error(`Invalid response from OpenAI: "${rawResponse}" (cleaned: "${response}")`);
+      }
+
+      return response as 'major' | 'minor' | 'patch';
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (attempt < maxRetries) {
+        console.log(`OpenAI API attempt ${attempt} failed, retrying... (${lastError.message})`);
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
     }
-
-    // Remove quotes and convert to lowercase
-    const response = rawResponse
-      .replace(/^["']|["']$/g, '') // Remove leading/trailing quotes
-      .trim()
-      .toLowerCase();
-
-    if (!['major', 'minor', 'patch'].includes(response)) {
-      throw new Error(`Invalid response from OpenAI: "${rawResponse}" (cleaned: "${response}")`);
-    }
-
-    return response as 'major' | 'minor' | 'patch';
-  } catch (error) {
-    throw new Error(
-      `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`
-    );
   }
+
+  throw new Error(
+    `OpenAI API error after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`
+  );
 }
 
 async function executeVersionBump(
@@ -1069,6 +1230,54 @@ export function filterDeletedFilesFromDiff(diff: string): string {
   }
 
   return filteredLines.join('\n');
+}
+
+async function commitVersionBump(
+  versionType: 'major' | 'minor' | 'patch',
+  numberOfCommits: number,
+  options: AnalyzeOptions
+): Promise<void> {
+  try {
+    const git = simpleGit();
+
+    // Stage the version files
+    const filesToStage: string[] = [];
+    
+    const packageJsonPath = join(process.cwd(), 'package.json');
+    if (existsSync(packageJsonPath)) {
+      filesToStage.push('package.json');
+      
+      const packageLockPath = join(process.cwd(), 'package-lock.json');
+      if (existsSync(packageLockPath)) {
+        filesToStage.push('package-lock.json');
+      }
+    }
+    
+    const helmChartPath = getHelmChartPath();
+    if (existsSync(helmChartPath)) {
+      filesToStage.push('helm/Chart.yaml');
+    }
+
+    if (filesToStage.length === 0) {
+      console.log('No version files to commit.');
+      return;
+    }
+
+    // Stage the files
+    await git.add(filesToStage);
+
+    // Create commit message
+    const commitMessage = `chore: bump version to ${versionType} based on last ${numberOfCommits} commit(s)`;
+
+    // Commit
+    await git.commit(commitMessage);
+
+    console.log(`\nSuccessfully committed version bump with message:\n"${commitMessage}"`);
+  } catch (error) {
+    throw new Error(
+      `Failed to commit version bump: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 async function generateCommitMessageAndCommit(
