@@ -791,12 +791,20 @@ Respond with only one word: "major", "minor", or "patch".`;
       temperature: 0,
     });
 
-    const response = completion.choices[0]?.message?.content
-      ?.trim()
+    const rawResponse = completion.choices[0]?.message?.content?.trim();
+    
+    if (!rawResponse) {
+      throw new Error('No response from OpenAI');
+    }
+
+    // Remove quotes and convert to lowercase
+    const response = rawResponse
+      .replace(/^["']|["']$/g, '') // Remove leading/trailing quotes
+      .trim()
       .toLowerCase();
 
-    if (!response || !['major', 'minor', 'patch'].includes(response)) {
-      throw new Error(`Invalid response from OpenAI: ${response}`);
+    if (!['major', 'minor', 'patch'].includes(response)) {
+      throw new Error(`Invalid response from OpenAI: "${rawResponse}" (cleaned: "${response}")`);
     }
 
     return response as 'major' | 'minor' | 'patch';
@@ -1015,6 +1023,54 @@ export function filterLargeFilesFromDiff(diff: string): string {
   return filteredLines.join('\n');
 }
 
+export function filterDeletedFilesFromDiff(diff: string): string {
+  const lines = diff.split('\n');
+  const filteredLines: string[] = [];
+  let skipDeletedFile = false;
+  let currentFile = '';
+  let isDeleted = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check if this is a file header line (diff --git a/file b/file)
+    if (line.startsWith('diff --git')) {
+      const fileMatch = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+      if (fileMatch) {
+        currentFile = fileMatch[1];
+        skipDeletedFile = false;
+        isDeleted = false;
+      }
+      filteredLines.push(line);
+      continue;
+    }
+
+    // Check for deleted file mode indicator
+    if (line.startsWith('deleted file mode')) {
+      isDeleted = true;
+      skipDeletedFile = true;
+      // Add a summary instead of the full diff
+      filteredLines.push(`deleted file mode ${line.split(' ').pop()}`);
+      filteredLines.push(`--- a/${currentFile}`);
+      filteredLines.push(`+++ /dev/null`);
+      filteredLines.push(`@@ File deleted: ${currentFile} @@`);
+      filteredLines.push('');
+      continue;
+    }
+
+    // Skip all content lines for deleted files
+    if (skipDeletedFile) {
+      // Skip lines until we reach the next file
+      continue;
+    }
+
+    // Add all other lines
+    filteredLines.push(line);
+  }
+
+  return filteredLines.join('\n');
+}
+
 async function generateCommitMessageAndCommit(
   options: AnalyzeOptions
 ): Promise<void> {
@@ -1045,12 +1101,15 @@ async function generateCommitMessageAndCommit(
     }
 
     // Filter out large files from diff for commit message generation
-    const filteredDiff = filterLargeFilesFromDiff(diff);
+    let filteredDiff = filterLargeFilesFromDiff(diff);
+    
+    // Filter out deleted files diffs (keep only summary)
+    filteredDiff = filterDeletedFilesFromDiff(filteredDiff);
 
     // Log if any large files were filtered out
     if (filteredDiff !== diff) {
       console.log(
-        'Note: Large files (like package-lock.json) are excluded from commit message generation to avoid token limits.'
+        'Note: Large files (like package-lock.json) and deleted file diffs are excluded from commit message generation to avoid token limits.'
       );
     }
 
@@ -1068,6 +1127,105 @@ async function generateCommitMessageAndCommit(
   }
 }
 
+// Rough token estimation (approximately 1 token per 4 characters)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// Intelligently truncate diff to fit within token limits
+function truncateDiffForCommit(diff: string, maxTokens: number = 6000): string {
+  const estimatedTokens = estimateTokens(diff);
+  
+  if (estimatedTokens <= maxTokens) {
+    return diff;
+  }
+
+  console.log(`Diff is too large (estimated ${estimatedTokens} tokens). Applying intelligent truncation...`);
+
+  const lines = diff.split('\n');
+  const truncatedLines: string[] = [];
+  let currentTokens = 0;
+  const targetTokens = maxTokens;
+  
+  // Strategy 1: Keep file headers and context, truncate large file contents
+  const files: { header: string[], content: string[], stats: { additions: number, deletions: number } }[] = [];
+  let currentFile: { header: string[], content: string[], stats: { additions: number, deletions: number } } | null = null;
+  
+  for (const line of lines) {
+    if (line.startsWith('diff --git')) {
+      if (currentFile) {
+        files.push(currentFile);
+      }
+      currentFile = { header: [line], content: [], stats: { additions: 0, deletions: 0 } };
+    } else if (currentFile) {
+      // Metadata lines go in header
+      if (line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++') || 
+          line.startsWith('new file mode') || line.startsWith('deleted file mode') ||
+          line.startsWith('@@')) {
+        currentFile.header.push(line);
+      } else {
+        // Content lines
+        currentFile.content.push(line);
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          currentFile.stats.additions++;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          currentFile.stats.deletions++;
+        }
+      }
+    }
+  }
+  
+  if (currentFile) {
+    files.push(currentFile);
+  }
+
+  // Strategy 2: Prioritize smaller files and summaries
+  const result: string[] = [];
+  let tokensUsed = 0;
+  
+  for (const file of files) {
+    const headerText = file.header.join('\n');
+    const headerTokens = estimateTokens(headerText);
+    
+    // Always include the header
+    result.push(headerText);
+    tokensUsed += headerTokens;
+    
+    const contentText = file.content.join('\n');
+    const contentTokens = estimateTokens(contentText);
+    
+    // If this file fits, include it fully
+    if (tokensUsed + contentTokens < targetTokens) {
+      result.push(contentText);
+      tokensUsed += contentTokens;
+    } else {
+      // Truncate this file's content
+      const remainingTokens = targetTokens - tokensUsed;
+      const remainingChars = remainingTokens * 4;
+      
+      if (remainingChars > 200) {
+        // Include partial content with summary
+        const partialContent = file.content.slice(0, Math.floor(file.content.length * 0.3)).join('\n');
+        const truncatedPartial = partialContent.substring(0, remainingChars - 200);
+        result.push(truncatedPartial);
+        result.push(`\n... [${file.stats.additions} additions, ${file.stats.deletions} deletions - content truncated] ...\n`);
+        tokensUsed = targetTokens;
+        break;
+      } else {
+        // Just add summary
+        result.push(`... [${file.stats.additions} additions, ${file.stats.deletions} deletions - content truncated] ...\n`);
+        tokensUsed = targetTokens;
+        break;
+      }
+    }
+  }
+  
+  const truncatedDiff = result.join('\n');
+  console.log(`Truncated diff from ${estimatedTokens} to approximately ${estimateTokens(truncatedDiff)} tokens`);
+  
+  return truncatedDiff;
+}
+
 async function generateCommitMessage(
   diff: string,
   options: AnalyzeOptions
@@ -1078,6 +1236,10 @@ async function generateCommitMessage(
   const openai = new OpenAI({
     apiKey,
   });
+
+  // Truncate diff to ensure we stay within 8192 token limit
+  // Reserve ~2000 tokens for the prompt template itself
+  const truncatedDiff = truncateDiffForCommit(diff, 6000);
 
   const prompt = `Analyze the following git diff and generate a structured commit message.
 
@@ -1106,9 +1268,10 @@ Guidelines:
 - Be specific about the impact or functionality
 - Do NOT include version bumps (package.json, Chart.yaml version changes) in the summary line
 - Version bumps can be included in bullet points if they are significant
+- If the diff is truncated, focus on the visible changes
 
 Git diff:
-${diff}
+${truncatedDiff}
 
 Respond with only the commit message in the specified format, no additional text or quotes.`;
 
