@@ -16,6 +16,7 @@ export interface AnalyzeOptions {
   unstaged?: boolean;
   both?: boolean;
   lastCommits?: string;
+  override?: string;
 }
 
 export interface ChangeType {
@@ -104,10 +105,21 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
     return;
   }
 
-  // Analyze with OpenAI (use filtered changes to exclude version bumps)
-  const versionType = await analyzeWithOpenAI(filteredChanges, options);
-
-  console.log(`Recommended version bump: ${versionType}`);
+  // Determine version bump type - use override if provided, otherwise analyze with OpenAI
+  let versionType: 'major' | 'minor' | 'patch';
+  
+  if (options.override) {
+    const overrideValue = options.override.toLowerCase();
+    if (overrideValue !== 'major' && overrideValue !== 'minor' && overrideValue !== 'patch') {
+      throw new Error(`Invalid override value: ${options.override}. Must be one of: major, minor, patch`);
+    }
+    versionType = overrideValue as 'major' | 'minor' | 'patch';
+    console.log(`Using override version bump: ${versionType}`);
+  } else {
+    // Analyze with OpenAI (use filtered changes to exclude version bumps)
+    versionType = await analyzeWithOpenAI(filteredChanges, options);
+    console.log(`Recommended version bump: ${versionType}`);
+  }
 
   if (options.dryRun) {
     if (detectedChangeType.type === 'helm-only') {
@@ -176,10 +188,21 @@ async function analyzeLastCommits(options: AnalyzeOptions): Promise<void> {
     return;
   }
 
-  // Analyze with OpenAI (use filtered changes to exclude version bumps)
-  const versionType = await analyzeWithOpenAI(filteredChanges, options);
-
-  console.log(`Recommended version bump: ${versionType}`);
+  // Determine version bump type - use override if provided, otherwise analyze with OpenAI
+  let versionType: 'major' | 'minor' | 'patch';
+  
+  if (options.override) {
+    const overrideValue = options.override.toLowerCase();
+    if (overrideValue !== 'major' && overrideValue !== 'minor' && overrideValue !== 'patch') {
+      throw new Error(`Invalid override value: ${options.override}. Must be one of: major, minor, patch`);
+    }
+    versionType = overrideValue as 'major' | 'minor' | 'patch';
+    console.log(`Using override version bump: ${versionType}`);
+  } else {
+    // Analyze with OpenAI (use filtered changes to exclude version bumps)
+    versionType = await analyzeWithOpenAI(filteredChanges, options);
+    console.log(`Recommended version bump: ${versionType}`);
+  }
 
   if (options.dryRun) {
     if (detectedChangeType.type === 'helm-only') {

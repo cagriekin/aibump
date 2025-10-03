@@ -1,6 +1,6 @@
 {
   "name": "aibump",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "AI-powered CLI tool that analyzes git changes and automatically bumps npm and Helm versions",
   "main": "dist/index.js",
   "bin": {

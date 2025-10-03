@@ -41,6 +41,10 @@ program
     '--last-commits <number>',
     'Analyze the last N commits instead of working directory changes'
   )
+  .option(
+    '--override <type>',
+    'Override version bump type (major|minor|patch) instead of using AI analysis'
+  )
   .action(async options => {
     try {
       // Handle --version option

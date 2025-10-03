@@ -21,6 +21,25 @@ Navigate to any npm project with git and run:
 aibump
 ```
 
+### Examples
+
+```bash
+# Use AI to determine version bump
+aibump
+
+# Override to force a major version bump
+aibump --override major
+
+# Override to force a minor version bump
+aibump --override minor
+
+# Override to force a patch version bump
+aibump --override patch
+
+# Combine with other options
+aibump --override minor --dry-run
+```
+
 ## Options
 
 - `-k, --api-key <key>`: OpenAI API key (can also be set via `OPENAI_API_KEY` environment variable)
@@ -31,6 +50,7 @@ aibump
 - `--unstaged`: Analyze only unstaged changes
 - `--both`: Analyze both staged and unstaged changes (default behavior)
 - `--last-commits <number>`: Analyze the last N commits instead of working directory changes
+- `--override <type>`: Override version bump type (major|minor|patch) instead of using AI analysis
 
 ## Prerequisites
 
