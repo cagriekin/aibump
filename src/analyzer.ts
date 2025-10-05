@@ -59,18 +59,18 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
 
   if (!combined.trim()) {
     console.log(
-      `No relevant ${changeType} changes found. Large files like package-lock.json are excluded from analysis.`
+      `No relevant ${changeType} changes found. Large files like package-lock.json and documentation files are excluded from analysis.`
     );
     return;
   }
 
   console.log(
-    `Found relevant ${changeType} changes (large files excluded):\n`,
+    `Found relevant ${changeType} changes (large files and documentation excluded):\n`,
     combined
   );
 
-  // Filter out version-only changes before analysis
-  const filteredChanges = filterVersionChanges(combined);
+  // Filter out version-only changes and documentation changes before analysis
+  const filteredChanges = filterDocumentationChanges(filterVersionChanges(combined));
 
   // Determine change type (helm vs app)
   const detectedChangeType = detectChangeType(filteredChanges);
@@ -167,17 +167,17 @@ async function analyzeLastCommits(options: AnalyzeOptions): Promise<void> {
 
   if (!changes.trim()) {
     console.log(
-      `No relevant changes found in the last ${numberOfCommits} commit(s). Large files like package-lock.json are excluded from analysis.`
+      `No relevant changes found in the last ${numberOfCommits} commit(s). Large files like package-lock.json and documentation files are excluded from analysis.`
     );
     return;
   }
 
   console.log(
-    `Found relevant changes in the last ${numberOfCommits} commit(s) (large files excluded)`
+    `Found relevant changes in the last ${numberOfCommits} commit(s) (large files and documentation excluded)`
   );
 
-  // Filter out version-only changes before analysis
-  const filteredChanges = filterVersionChanges(changes);
+  // Filter out version-only changes and documentation changes before analysis
+  const filteredChanges = filterDocumentationChanges(filterVersionChanges(changes));
 
   // Determine change type (helm vs app)
   const detectedChangeType = detectChangeType(filteredChanges);
@@ -311,6 +311,32 @@ const EXCLUDED_FILES = [
   '*.log',
   '*.min.js',
   '*.min.css',
+];
+
+// Documentation files to exclude from triggering version updates
+const DOCUMENTATION_FILES = [
+  'README.md',
+  'README.txt',
+  'README.rst',
+  'README.adoc',
+  'CHANGELOG.md',
+  'CHANGELOG.txt',
+  'CHANGES.md',
+  'HISTORY.md',
+  'docs/',
+  'documentation/',
+  '*.md',
+  '*.txt',
+  '*.rst',
+  '*.adoc',
+  'LICENSE',
+  'LICENSE.txt',
+  'LICENSE.md',
+  'CONTRIBUTING.md',
+  'CONTRIBUTING.txt',
+  'CONTRIBUTORS.md',
+  'AUTHORS.md',
+  'AUTHORS.txt',
 ];
 
 async function getStagedChanges(): Promise<string> {
@@ -611,6 +637,50 @@ function filterVersionChanges(diff: string): string {
     }
 
     filteredLines.push(line);
+  }
+
+  return filteredLines.join('\n');
+}
+
+function filterDocumentationChanges(diff: string): string {
+  // Filter out documentation-only changes from the diff
+  // This prevents documentation changes from triggering version updates
+
+  const lines = diff.split('\n');
+  const filteredLines: string[] = [];
+  let skipFile = false;
+  let currentFile = '';
+
+  for (const line of lines) {
+    // Check if this is a file header line (diff --git a/file b/file)
+    if (line.startsWith('diff --git')) {
+      const fileMatch = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+      if (fileMatch) {
+        currentFile = fileMatch[1];
+
+        // Check if this file is a documentation file
+        const isDocumentationFile = DOCUMENTATION_FILES.some(
+          docFile =>
+            currentFile === docFile ||
+            currentFile.includes(docFile) ||
+            (docFile.includes('*') &&
+              currentFile.match(docFile.replace('*', '.*')))
+        );
+
+        if (isDocumentationFile) {
+          skipFile = true;
+          console.log(`Excluding documentation file from analysis: ${currentFile}`);
+          continue;
+        } else {
+          skipFile = false;
+        }
+      }
+    }
+
+    // If we're not skipping this file, add the line
+    if (!skipFile) {
+      filteredLines.push(line);
+    }
   }
 
   return filteredLines.join('\n');
