@@ -59,7 +59,7 @@ export async function analyzeChanges(options: AnalyzeOptions): Promise<void> {
 
   if (!combined.trim()) {
     console.log(
-      `No relevant ${changeType} changes found. Large files like package-lock.json and documentation files are excluded from analysis.`
+      `No relevant ${changeType} changes found. Large files like package-lock.json, bun.lock and documentation files are excluded from analysis.`
     );
     return;
   }
@@ -167,7 +167,7 @@ async function analyzeLastCommits(options: AnalyzeOptions): Promise<void> {
 
   if (!changes.trim()) {
     console.log(
-      `No relevant changes found in the last ${numberOfCommits} commit(s). Large files like package-lock.json and documentation files are excluded from analysis.`
+      `No relevant changes found in the last ${numberOfCommits} commit(s). Large files like package-lock.json, bun.lock and documentation files are excluded from analysis.`
     );
     return;
   }
@@ -302,6 +302,8 @@ const EXCLUDED_FILES = [
   'package-lock.json',
   'yarn.lock',
   'pnpm-lock.yaml',
+  'bun.lock',
+  'bun.lockb',
   'node_modules/',
   '.git/',
   'dist/',
@@ -1411,7 +1413,7 @@ async function generateCommitMessageAndCommit(
     // Log if any large files were filtered out
     if (filteredDiff !== diff) {
       console.log(
-        'Note: Large files (like package-lock.json) and deleted file diffs are excluded from commit message generation to avoid token limits.'
+        'Note: Large files (like package-lock.json, bun.lock) and deleted file diffs are excluded from commit message generation to avoid token limits.'
       );
     }
 
